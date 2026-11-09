@@ -1,8 +1,13 @@
 {
   "slug": "syncshare-test",
-  "name": "Meine App",
+  "name": "SyncShare",
   "category": "Sonstiges",
-  "menu": { "label": "Meine App", "icon": "info" },
-  "roles": ["student"],
+  "menu": {
+    "label": "SyncShare",
+    "icon": "info"
+  },
+  "roles": [
+    "student"
+  ],
   "version": "0.1.0"
 }
