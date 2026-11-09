@@ -1,3 +1,52 @@
-<h1>Meine App</h1>
+<h1>SyncShare</h1>
 
-<p class="lead">Hier entsteht Ihre Anwendung.</p>
+<p class="lead">Laden Sie Dateien hoch und holen Sie sie später wieder ab. Nur Sie sehen Ihre Dateien.</p>
+
+{% if errors %}
+<div class="error-summary" role="alert">
+  <h2>Das hat nicht geklappt</h2>
+  <ul>
+    {% for field, message in errors.items() %}
+    <li><a href="#{{ field }}">{{ message }}</a></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<form method="post" action="{{ upload_url }}" enctype="multipart/form-data">
+  <div class="field">
+    <label for="datei">Datei <span class="field__required">(Pflichtfeld)</span></label>
+    <p class="field__hint" id="datei-hinweis">Bis {{ max_mb }} MB je Datei.</p>
+    <input type="file" id="datei" name="datei" aria-describedby="datei-hinweis" required>
+    {% if errors.datei %}<p class="field__error">{{ errors.datei }}</p>{% endif %}
+  </div>
+  <button type="submit" class="btn btn--primary">Hochladen</button>
+</form>
+
+<h2>Ihre Dateien</h2>
+
+{% if files %}
+<div class="table-wrap">
+  <table class="table">
+    <caption>Hochgeladene Dateien</caption>
+    <thead>
+      <tr>
+        <th scope="col">Name</th>
+        <th scope="col" class="num">Größe</th>
+        <th scope="col">Abholen</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in files %}
+      <tr>
+        <th scope="row">{{ f.name }}</th>
+        <td class="num">{{ f.size_kb }} KB</td>
+        <td><a href="{{ f.url }}">Herunterladen<span class="visually-hidden">: {{ f.name }}</span></a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p>Sie haben noch keine Dateien hochgeladen.</p>
+{% endif %}
