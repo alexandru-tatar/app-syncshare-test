@@ -2,12 +2,13 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from platform_sdk import Portal, User
+from platform_sdk import AdapterError, Portal, User
 
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")  # autoescape ist an
 
@@ -18,11 +19,12 @@ MAX_FILES = 20  # je Person
 @dataclass(frozen=True)
 class StoredFile:
     name: str
-    data: bytes
+    size: int
+    remote_path: str
 
 
-# Nur im Arbeitsspeicher: Der Container ist schreibgeschützt, und die Dateien sollen nach einem Neustart weg sein.
-# Jede Person sieht nur ihre eigenen Dateien (Schlüssel: User.sub).
+# Nur die Dateiliste liegt im RAM; Dateiinhalte liegen in bwSync.
+# Jede Person sieht ihre eigenen Einträge (Schlüssel: User.sub).
 STORE: dict[str, dict[str, StoredFile]] = {}
 
 
@@ -38,7 +40,7 @@ def build_router(portal: Portal) -> APIRouter:
 
     async def show(user: User, *, errors: dict[str, str] | None = None, status_code: int = 200) -> HTMLResponse:
         files = [
-            {"name": f.name, "size_kb": max(1, round(len(f.data) / 1024)), "url": portal.url(f"/datei/{file_id}")}
+            {"name": f.name, "size_kb": max(1, round(f.size / 1024)), "url": portal.url(f"/datei/{file_id}")}
             for file_id, f in STORE.get(user.sub, {}).items()
         ]
         body = templates.get_template("page.html").render(
@@ -66,7 +68,16 @@ def build_router(portal: Portal) -> APIRouter:
         if len(mine) >= MAX_FILES:
             msg = f"Sie haben schon {MAX_FILES} Dateien hochgeladen. Mehr sind nicht möglich."
             return await show(user, errors={"datei": msg}, status_code=400)
-        mine[secrets.token_urlsafe(8)] = StoredFile(name=name, data=data)
+        file_id = secrets.token_hex(16)
+        remote_path = f"adapter-test/{file_id}"
+        try:
+            await portal.adapters.bwsync.upload(remote_path, data)
+        except AdapterError as exc:
+            message = "Die Datei konnte nicht hochgeladen werden. Bitte versuchen Sie es erneut."
+            if exc.status == 412:
+                message = "Am Ziel existiert bereits eine Datei. Bitte versuchen Sie den Upload erneut."
+            return await show(user, errors={"datei": message}, status_code=exc.status)
+        mine[file_id] = StoredFile(name=name, size=len(data), remote_path=remote_path)
         return await show(user)
 
     @router.get("/datei/{file_id}")
@@ -74,12 +85,18 @@ def build_router(portal: Portal) -> APIRouter:
         stored = STORE.get(user.sub, {}).get(file_id)
         if stored is None:
             return await show(user, errors={"datei": "Diese Datei gibt es nicht (mehr)."}, status_code=404)
+        try:
+            data = await portal.adapters.bwsync.download(stored.remote_path, max_bytes=MAX_BYTES)
+        except AdapterError as exc:
+            return await show(
+                user, errors={"datei": "Die Datei konnte nicht heruntergeladen werden."}, status_code=exc.status
+            )
         # Nie im Browser ausführen oder anzeigen: immer als Download, ohne Typ-Erkennung.
         return Response(
-            stored.data,
+            data,
             media_type="application/octet-stream",
             headers={
-                "Content-Disposition": f'attachment; filename="{stored.name.replace(chr(34), "")}"',
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(stored.name, safe='')}",
                 "X-Content-Type-Options": "nosniff",
             },
         )

@@ -1,5 +1,7 @@
+import pytest
 from conftest import make_token
 
+from app import views
 from app.main import portal
 
 
@@ -81,3 +83,35 @@ def test_ohne_datei_deutsche_meldung_statt_422(client, as_student):
 def test_upload_ohne_anmeldung_401(client):
     antwort = client.post(portal.url("/upload"), files={"datei": ("a.txt", b"x")})
     assert antwort.status_code == 401
+
+
+def test_inhalt_liegt_im_adapter_nicht_im_app_store(client, as_student, adapter_backend):
+    antwort = hochladen(client, as_student, name="ä.txt", inhalt=b"\x00\xff")
+    assert antwort.status_code == 200
+    stored = next(iter(views.STORE["test-person"].values()))
+    assert stored.size == 2 and not hasattr(stored, "data")
+    path = "/bwsync/files/" + stored.remote_path
+    assert adapter_backend.files[path] == b"\x00\xff"
+    adapter_backend.files[path] = b"remote content"
+    file_id = next(iter(views.STORE["test-person"]))
+    response = client.get(portal.url(f"/datei/{file_id}"), headers=as_student)
+    assert response.content == b"remote content"
+    assert "%C3%A4.txt" in response.headers["content-disposition"]
+
+
+@pytest.mark.parametrize("status", [412, 503, 504])
+def test_fehlgeschlagener_upload_ohne_listeneintrag(client, as_student, adapter_backend, status):
+    adapter_backend.status = status
+    response = hochladen(client, as_student)
+    assert response.status_code == status
+    assert views.STORE["test-person"] == {}
+    assert len(adapter_backend.calls) == 1
+
+
+def test_downloadfehler_zeigt_meldung(client, as_student, adapter_backend):
+    hochladen(client, as_student)
+    file_id = next(iter(views.STORE["test-person"]))
+    adapter_backend.status = 404
+    response = client.get(portal.url(f"/datei/{file_id}"), headers=as_student)
+    assert response.status_code == 404
+    assert "nicht heruntergeladen" in response.text

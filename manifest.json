@@ -9,5 +9,9 @@
   "roles": [
     "student"
   ],
+  "adapters": [
+    "bwsync:read",
+    "bwsync:write"
+  ],
   "version": "0.1.0"
 }
