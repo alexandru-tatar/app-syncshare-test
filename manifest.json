@@ -11,7 +11,8 @@
   ],
   "adapters": [
     "bwsync:read",
-    "bwsync:write"
+    "bwsync:write",
+    "bwsync:delete"
   ],
   "version": "0.1.0"
 }
