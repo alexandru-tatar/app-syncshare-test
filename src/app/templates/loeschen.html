@@ -1,0 +1,15 @@
+<h1>{{ kind }} löschen?</h1>
+
+{% include "_meldungen.html" %}
+
+<p id="loeschen">Wollen Sie {{ "den Ordner" if folder else "die Datei" }} <strong>{{ name }}</strong> in „{{ where }}“ wirklich löschen?</p>
+<p class="muted">Gelöschtes liegt danach im Papierkorb von bwSync&amp;Share und lässt sich dort wiederherstellen.{% if folder %} Nur leere Ordner lassen sich löschen.{% endif %}</p>
+
+<form method="post" action="{{ action }}">
+  <input type="hidden" name="pfad" value="{{ pfad }}">
+  <input type="hidden" name="art" value="{{ art }}">
+  <div class="actions">
+    <button type="submit" class="btn btn--primary">Ja, löschen</button>
+    <a class="btn" href="{{ back_url }}">Abbrechen</a>
+  </div>
+</form>

@@ -1,52 +1,95 @@
 <h1>SyncShare</h1>
 
-<p class="lead">Laden Sie Dateien hoch und holen Sie sie später wieder ab. Nur Sie sehen Ihre Dateien.</p>
+<p class="lead">Ihre Dateien in bwSync&amp;Share: Ordner ansehen und anlegen, Dateien hoch- und herunterladen, umbenennen und löschen.</p>
 
-{% if errors %}
-<div class="error-summary" role="alert">
-  <h2>Das hat nicht geklappt</h2>
-  <ul>
-    {% for field, message in errors.items() %}
-    <li><a href="#{{ field }}">{{ message }}</a></li>
-    {% endfor %}
-  </ul>
+{% include "_meldungen.html" %}
+
+{% if link_problem %}
+<div class="notice notice--warn" role="status">
+  <h2>bwSync&amp;Share ist nicht verbunden</h2>
+  <p>{{ link_problem }}</p>
 </div>
+{% elif not folder %}
+<p id="liste"><a href="{{ root_url }}">Zur obersten Ebene</a></p>
+{% else %}
+<nav class="crumbs" aria-label="Ordnerpfad">
+  <ol>
+    {% for c in crumbs %}
+    <li>{% if loop.last %}<span aria-current="page">{{ c.name }}</span>{% else %}<a href="{{ c.url }}">{{ c.name }}</a>{% endif %}</li>
+    {% endfor %}
+  </ol>
+</nav>
+
+<h2 id="liste">{{ title }}</h2>
+
+{% if up_url %}<p><a href="{{ up_url }}">Eine Ebene höher</a></p>{% endif %}
+
+{% if folder.truncated %}
+<div class="notice notice--warn"><p>Der Ordner hat mehr als 1000 Einträge. SyncShare zeigt nur die ersten 1000.</p></div>
+{% endif %}
+{% if folder.skipped %}
+<p class="muted small">{{ folder.skipped }} {{ "Eintrag wird" if folder.skipped == 1 else "Einträge werden" }} nicht angezeigt, weil der Name eines dieser Zeichen enthält: : % ? # \</p>
 {% endif %}
 
-<form method="post" action="{{ upload_url }}" enctype="multipart/form-data">
-  <div class="field">
-    <label for="datei">Datei <span class="field__required">(Pflichtfeld)</span></label>
-    <p class="field__hint" id="datei-hinweis">Bis {{ max_mb }} MB je Datei.</p>
-    <input type="file" id="datei" name="datei" aria-describedby="datei-hinweis" required>
-    {% if errors.datei %}<p class="field__error">{{ errors.datei }}</p>{% endif %}
-  </div>
-  <button type="submit" class="btn btn--primary">Hochladen</button>
-</form>
-
-<h2>Ihre Dateien</h2>
-
-{% if files %}
+{% if rows %}
 <div class="table-wrap">
   <table class="table">
-    <caption>Hochgeladene Dateien</caption>
+    <caption>Inhalt von {{ title }}</caption>
     <thead>
       <tr>
         <th scope="col">Name</th>
+        <th scope="col">Art</th>
         <th scope="col" class="num">Größe</th>
-        <th scope="col">Abholen</th>
+        <th scope="col">Geändert</th>
+        <th scope="col">Aktionen</th>
       </tr>
     </thead>
     <tbody>
-      {% for f in files %}
+      {% for r in rows %}
       <tr>
-        <th scope="row">{{ f.name }}</th>
-        <td class="num">{{ f.size_kb }} KB</td>
-        <td><a href="{{ f.url }}">Herunterladen<span class="visually-hidden">: {{ f.name }}</span></a></td>
+        <th scope="row">{% if r.folder %}<a href="{{ r.open_url }}">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</th>
+        <td>{{ "Ordner" if r.folder else "Datei" }}</td>
+        <td class="num">{{ r.size }}</td>
+        <td>{{ r.modified }}</td>
+        <td>
+          <div class="actions">
+            {% if r.download_url %}<a href="{{ r.download_url }}">Herunterladen<span class="visually-hidden">: {{ r.name }}</span></a>{% endif %}
+            <a href="{{ r.rename_url }}">Umbenennen<span class="visually-hidden">: {{ r.name }}</span></a>
+            <a href="{{ r.delete_url }}">Löschen<span class="visually-hidden">: {{ r.name }}</span></a>
+          </div>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 {% else %}
-<p>Sie haben noch keine Dateien hochgeladen.</p>
+<p>Dieser Ordner ist leer.</p>
+{% endif %}
+
+<div class="explorer-forms">
+  <form method="post" action="{{ mkdir_url }}">
+    <h2>Neuer Ordner</h2>
+    <input type="hidden" name="pfad" value="{{ pfad }}">
+    <div class="field">
+      <label for="name">Name des Ordners <span class="field__required">(Pflichtfeld)</span></label>
+      <p class="field__hint" id="name-hinweis">Wird in „{{ title }}“ angelegt.</p>
+      <input type="text" id="name" name="name" value="{{ values.name or '' }}" maxlength="255" aria-describedby="name-hinweis" required>
+      {% if errors.name %}<p class="field__error">{{ errors.name }}</p>{% endif %}
+    </div>
+    <button type="submit" class="btn">Ordner anlegen</button>
+  </form>
+
+  <form method="post" action="{{ upload_url }}" enctype="multipart/form-data">
+    <h2>Datei hochladen</h2>
+    <input type="hidden" name="pfad" value="{{ pfad }}">
+    <div class="field">
+      <label for="datei">Datei <span class="field__required">(Pflichtfeld)</span></label>
+      <p class="field__hint" id="datei-hinweis">Bis {{ max_mb }} MB, in „{{ title }}“. Vorhandene Dateien werden nie überschrieben.</p>
+      <input type="file" id="datei" name="datei" aria-describedby="datei-hinweis" required>
+      {% if errors.datei %}<p class="field__error">{{ errors.datei }}</p>{% endif %}
+    </div>
+    <button type="submit" class="btn btn--primary">Hochladen</button>
+  </form>
+</div>
 {% endif %}

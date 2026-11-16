@@ -1,0 +1,12 @@
+{% if errors %}
+<div class="error-summary" role="alert">
+  <h2>Das hat nicht geklappt</h2>
+  <ul>
+    {% for field, message in errors.items() %}
+    <li><a href="#{{ field }}">{{ message }}</a></li>
+    {% endfor %}
+  </ul>
+</div>
+{% elif done %}
+<div class="notice" role="status"><p>{{ done }}</p></div>
+{% endif %}
