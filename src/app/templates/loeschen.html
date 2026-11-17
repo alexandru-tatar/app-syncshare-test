@@ -3,7 +3,12 @@
 {% include "_meldungen.html" %}
 
 <p id="loeschen">Wollen Sie {{ "den Ordner" if folder else "die Datei" }} <strong>{{ name }}</strong> in „{{ where }}“ wirklich löschen?</p>
-<p class="muted">Gelöschtes liegt danach im Papierkorb von bwSync&amp;Share und lässt sich dort wiederherstellen.{% if folder %} Nur leere Ordner lassen sich löschen.{% endif %}</p>
+{% if folder %}
+{% if content %}<p id="ordner-inhalt">{{ content }}</p>{% endif %}
+<p class="muted">Alles landet im Papierkorb von bwSync&amp;Share und lässt sich dort für einige Zeit wiederherstellen.</p>
+{% else %}
+<p class="muted">Gelöschtes liegt danach im Papierkorb von bwSync&amp;Share und lässt sich dort wiederherstellen.</p>
+{% endif %}
 
 <form method="post" action="{{ action }}">
   <input type="hidden" name="pfad" value="{{ pfad }}">

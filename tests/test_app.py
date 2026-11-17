@@ -448,12 +448,39 @@ def test_leeren_ordner_loeschen(client, as_student, konto):
     assert "Studium/Semester 5" not in konto.folders
 
 
-def test_ordner_mit_inhalt_wird_nicht_geloescht(client, as_student, konto):
+def test_ordner_rueckfrage_zeigt_inhalt_und_papierkorb(client, as_student, konto):
+    konto.files["Studium/b.txt"] = b"b"
+    frage = client.get(portal.url("/loeschen"), headers=as_student, params={"pfad": "Studium", "art": "ordner"})
+    assert frage.status_code == 200
+    assert "Direkt darin: 2 Dateien und 1 Ordner. Unterordner werden mit ihrem ganzen Inhalt gelöscht." in frage.text
+    assert (
+        "Alles landet im Papierkorb von bwSync&amp;Share und lässt sich dort für einige Zeit wiederherstellen."
+        in frage.text
+    )
+    assert "Nur leere Ordner" not in frage.text and aenderungen(konto) == []
+    leer = client.get(
+        portal.url("/loeschen"), headers=as_student, params={"pfad": "Studium/Semester 5", "art": "ordner"}
+    ).text
+    assert "Der Ordner ist leer." in leer
+    konto.files["Ärger/x.txt"] = b"x"
+    einer = client.get(portal.url("/loeschen"), headers=as_student, params={"pfad": "Ärger", "art": "ordner"}).text
+    assert "Direkt darin: 1 Datei und 0 Ordner." in einer
+    datei = client.get(portal.url("/loeschen"), headers=as_student, params={"pfad": "zeta.txt", "art": "datei"}).text
+    assert "ordner-inhalt" not in datei and "für einige Zeit" not in datei
+
+
+def test_ordner_rueckfrage_ohne_liste(client, as_student, konto):
+    frage = client.get(portal.url("/loeschen"), headers=as_student, params={"pfad": "Fehlt", "art": "ordner"})
+    assert frage.status_code == 200 and "ordner-inhalt" not in frage.text  # ohne Zahl, Löschen meldet den Fehler
+    assert "Ja, löschen" in frage.text
+
+
+def test_ordner_mit_inhalt_loeschen(client, as_student, konto):
     antwort = senden(client, as_student, "/loeschen", pfad="Studium", art="ordner")
-    assert antwort.status_code == 409 and "Der Ordner ist nicht leer." in antwort.text
-    assert "Studium/plan.pdf" in konto.files
-    kasten = fehlerkasten(antwort.text)
-    assert "<li>Der Ordner ist nicht leer." in kasten and "<a " not in kasten  # ohne Feld: Text, kein Link
+    assert antwort.status_code == 303 and antwort.headers["location"] == portal.url("/?ok=geloescht")
+    assert not any(p == "Studium" or p.startswith("Studium/") for p in konto.folders | set(konto.files))
+    assert aenderungen(konto) == [("DELETE", "/bwsync/folders/Studium")]
+    assert "Ärger" in konto.folders and "zeta.txt" in konto.files  # sonst nichts
 
 
 def test_download_fehler_ohne_link_im_fehlerkasten(client, as_student, konto):

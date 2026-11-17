@@ -118,9 +118,9 @@ class FakeBwSync:
             if method == "DELETE":
                 if rel not in self.folders:
                     return self.problem(404)
-                if self.children(rel):
-                    return self.problem(409, "bwsync-folder-not-empty")
-                self.folders.discard(rel)
+                # wie der Adapter: mit allem Inhalt (bwSync legt es in den Papierkorb)
+                self.folders = {f for f in self.folders if f != rel and not f.startswith(rel + "/")}
+                self.files = {k: v for k, v in self.files.items() if not k.startswith(rel + "/")}
                 return httpx.Response(204)
         if path == "/bwsync/move" and method == "POST":
             body = json.loads(request.content)

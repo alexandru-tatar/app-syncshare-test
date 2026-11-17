@@ -52,7 +52,6 @@ PROBLEMS = {
     "bwsync-exists": "Hier gibt es schon einen Ordner oder eine Datei mit diesem Namen. Bitte wählen Sie einen "
     "anderen Namen.",
     "bwsync-parent-missing": "Diesen Ordner gibt es nicht (mehr). Bitte laden Sie die Seite neu.",
-    "bwsync-folder-not-empty": "Der Ordner ist nicht leer. Bitte löschen Sie zuerst seinen Inhalt.",
 }
 LINK_PROBLEMS = {"bwsync-not-linked", "bwsync-link-invalid"}
 STATUS_TEXTS = {
@@ -353,6 +352,22 @@ def build_router(portal: Portal) -> APIRouter:
 
     # --- Löschen: GET zeigt nur die Rückfrage, erst POST löscht -----------------------------------------------
 
+    async def folder_content(pfad: str) -> str | None:
+        """Was direkt im Ordner liegt, als Satz; None, wenn die Liste gerade nicht zu holen ist."""
+        try:
+            listing = await bwsync.list(pfad)
+        except AdapterError:
+            return None
+        files = sum(1 for e in listing.entries if e.type != "folder")
+        folders = len(listing.entries) - files
+        if not files and not folders and not listing.skipped and not listing.truncated:
+            return "Der Ordner ist leer."
+        parts = [f"{files} {'Datei' if files == 1 else 'Dateien'}", f"{folders} Ordner"]
+        text = ("mindestens " if listing.truncated else "") + " und ".join(parts)
+        if listing.skipped:
+            text += f" sowie {listing.skipped} weitere, die SyncShare nicht anzeigt"
+        return f"Direkt darin: {text}. Unterordner werden mit ihrem ganzen Inhalt gelöscht."
+
     async def delete_page(user: User, pfad: str, art: str, *, errors=None, status_code=200) -> HTMLResponse:
         return await render(
             user,
@@ -365,6 +380,7 @@ def build_router(portal: Portal) -> APIRouter:
             art=art,
             kind=KINDS[art],
             folder=art == "ordner",
+            content=await folder_content(pfad) if art == "ordner" else None,
             action=link("/loeschen"),
             back_url=folder_url(parent_of(pfad)),
             errors=errors or {},
@@ -394,7 +410,7 @@ def build_router(portal: Portal) -> APIRouter:
 
     # --- Umbenennen (nur der Name, im selben Ordner) ---------------------------------------------------------
     # Normalfall: direkt in der Tabelle (app.js schickt POST mit Accept: application/json, Antwort JSON).
-    # Ohne JavaScript: eigene Seite als Ausweichweg. Verschieben gibt es nicht mehr; der Elternordner bleibt.
+    # Ohne JavaScript: eigene Seite als Ausweichweg. Der Elternordner bleibt; Verschieben hat eine eigene Seite.
 
     async def rename_page(user: User, pfad: str, art: str, *, name=None, errors=None, status_code=200):
         return await render(
