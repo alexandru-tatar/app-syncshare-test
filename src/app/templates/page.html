@@ -19,13 +19,13 @@
 {% elif not folder %}
 <p id="liste"><a href="{{ root_url }}">Zur obersten Ebene</a></p>
 {% else %}
-<nav class="crumbs" id="liste" aria-label="Ordnerpfad">
-  <ol>
+<div class="crumbs" id="liste">
+  <ol aria-label="Ordnerpfad">
     {% for c in crumbs %}
     <li>{% if loop.last %}<span aria-current="page">{{ c.name }}</span>{% else %}<a href="{{ c.url }}">{{ c.name }}</a>{% endif %}</li>
     {% endfor %}
   </ol>
-</nav>
+</div>
 
 {% if folder.truncated %}
 <div class="notice notice--warn"><p>Der Ordner hat mehr als 1000 Einträge. SyncShare zeigt nur die ersten 1000.</p></div>

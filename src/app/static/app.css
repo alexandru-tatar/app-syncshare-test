@@ -6,6 +6,7 @@
 .page-head h1 { margin: 0; }
 
 /* Datei-Explorer */
+/* Pfadleiste: <div class="crumbs"><ol aria-label="…"> (kein <nav>, das Menü kommt vom Portal, R-UI-1) */
 .crumbs ol { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: 0 0 var(--s-4); padding: 0; list-style: none; }
 .crumbs li + li::before { content: "/"; margin-right: var(--s-2); color: var(--ink-muted); }
 .crumbs [aria-current="page"] { font-weight: 700; }

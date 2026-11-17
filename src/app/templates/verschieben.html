@@ -4,13 +4,13 @@
 
 <p>{{ kind }} <strong>{{ name }}</strong> aus „{{ where }}“. Wählen Sie den Zielordner und verschieben Sie dann hierher.</p>
 
-<nav class="crumbs" aria-label="Zielordner">
-  <ol>
+<div class="crumbs">
+  <ol aria-label="Zielordner">
     {% for c in crumbs %}
     <li>{% if loop.last %}<span aria-current="page">{{ c.name }}</span>{% else %}<a href="{{ c.url }}">{{ c.name }}</a>{% endif %}</li>
     {% endfor %}
   </ol>
-</nav>
+</div>
 
 {% if listed %}
 {% if folders %}

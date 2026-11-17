@@ -95,7 +95,9 @@ def test_jede_anfrage_mit_der_eigenen_anmeldung(client, konto):
 def test_navigieren_mit_brotkrumen(client, as_student, konto):
     html = seite(client, as_student, "Studium/Semester 5").text
     assert konto.calls[-1].url.raw_path == b"/bwsync/folders/Studium/Semester%205"
-    nav = html[html.index('class="crumbs"') : html.index("</nav>", html.index('class="crumbs"'))]
+    nav = html[html.index('class="crumbs"') : html.index("</ol>", html.index('class="crumbs"'))]
+    assert '<ol aria-label="Ordnerpfad">' in nav
+    assert html.count("<nav") == html.count('aria-label="Hauptnavigation"')  # nur das Menü des Portals
     assert portal.url("/") in links(nav) and portal.url("/?pfad=Studium") in links(nav)
     assert 'aria-current="page">Semester 5<' in nav
     assert "Dieser Ordner ist leer." in html and "Eine Ebene höher" not in html  # die Pfadleiste reicht
@@ -377,7 +379,7 @@ def test_verschieben_pfadleiste_fuehrt_zur_obersten_ebene(client, as_student, ko
         portal.url("/verschieben"), headers=as_student, params={"pfad": "Studium/plan.pdf", "art": "datei"}
     ).text
     leiste = start[
-        start.index('aria-label="Zielordner"') : start.index("</nav>", start.index('aria-label="Zielordner"'))
+        start.index('aria-label="Zielordner"') : start.index("</ol>", start.index('aria-label="Zielordner"'))
     ]
     oben = html_lib.unescape(re.search(r'<a href="([^"]+)">Mein bwSync&amp;Share</a>', leiste).group(1))
     assert oben.endswith("&ziel=")  # leeres Ziel bleibt im Link
