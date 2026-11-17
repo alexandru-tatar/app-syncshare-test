@@ -369,6 +369,31 @@ def test_verschieben_navigieren_und_ordner_selbst_nicht_anbieten(client, as_stud
     assert "Nach „Ärger“ verschieben</button>" in ziel and 'name="ziel" value="Ärger"' in ziel
 
 
+def test_verschieben_pfadleiste_fuehrt_zur_obersten_ebene(client, as_student, konto):
+    import html as html_lib
+    import re
+
+    start = client.get(
+        portal.url("/verschieben"), headers=as_student, params={"pfad": "Studium/plan.pdf", "art": "datei"}
+    ).text
+    leiste = start[
+        start.index('aria-label="Zielordner"') : start.index("</nav>", start.index('aria-label="Zielordner"'))
+    ]
+    oben = html_lib.unescape(re.search(r'<a href="([^"]+)">Mein bwSync&amp;Share</a>', leiste).group(1))
+    assert oben.endswith("&ziel=")  # leeres Ziel bleibt im Link
+    seite_ = client.get(oben, headers=as_student).text  # dem Link folgen wie im Browser
+    assert 'aria-current="page">Mein bwSync&amp;Share<' in seite_
+    assert 'name="ziel" value=""' in seite_
+    assert "Nach „Mein bwSync&amp;Share“ verschieben</button>" in seite_
+    unter = html_lib.unescape(re.search(r'<a href="([^"]+)">Studium<', seite_).group(1))
+    assert 'aria-current="page">Studium<' in client.get(unter, headers=as_student).text  # und wieder hinein
+    antwort = senden(client, as_student, "/verschieben", pfad="Studium/plan.pdf", art="datei", ziel="")
+    assert antwort.status_code == 303 and antwort.headers["location"] == portal.url("/?ok=verschoben")
+    assert konto.files["plan.pdf"] == b"pdf" and "Studium/plan.pdf" not in konto.files
+    move = [c for c in konto.calls if c.url.path == "/bwsync/move"][-1]
+    assert json.loads(move.content) == {"from": "Studium/plan.pdf", "to": "plan.pdf"}
+
+
 def test_verschieben_datei_und_ordner(client, as_student, konto):
     antwort = senden(client, as_student, "/verschieben", pfad="Studium/plan.pdf", art="datei", ziel="Ärger")
     assert antwort.status_code == 303 and antwort.headers["location"] == portal.url("/?pfad=%C3%84rger&ok=verschoben")

@@ -476,6 +476,11 @@ def build_router(portal: Portal) -> APIRouter:
             return "Ein Ordner kann nicht in sich selbst verschoben werden."
         return None
 
+    def move_url(pfad: str, art: str, ziel: str) -> str:
+        """Link der Verschieben-Seite; ziel steht immer drin, auch leer (= oberste Ebene).
+        Fehlt ziel, startet die Seite im eigenen Ordner; link() ließe den leeren Wert weg."""
+        return portal.url("/verschieben") + "?" + urlencode({"pfad": pfad, "art": art, "ziel": ziel}, quote_via=quote)
+
     async def move_page(user: User, pfad: str, art: str, ziel: str, *, errors=None, status_code=200):
         errors = dict(errors or {})
         folders, listed = [], False
@@ -485,14 +490,14 @@ def build_router(portal: Portal) -> APIRouter:
             for entry in listing.entries:
                 sub = join(ziel, entry.name)
                 if entry.type == "folder" and sub != pfad:  # den Ordner selbst nicht anbieten
-                    folders.append({"name": entry.name, "url": link("/verschieben", pfad=pfad, art=art, ziel=sub)})
+                    folders.append({"name": entry.name, "url": move_url(pfad, art, sub)})
         except AdapterError as exc:
             errors.setdefault("verschieben", problem_text(exc))
             if status_code == 200:
                 status_code = page_status(exc)
 
         def here(path: str) -> str:
-            return link("/verschieben", pfad=pfad, art=art, ziel=path)
+            return move_url(pfad, art, path)
 
         return await render(
             user,
