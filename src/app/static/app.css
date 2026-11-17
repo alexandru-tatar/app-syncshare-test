@@ -8,5 +8,6 @@
 /* Datei-Explorer */
 .crumbs ol { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: 0 0 var(--s-4); padding: 0; list-style: none; }
 .crumbs li + li::before { content: "/"; margin-right: var(--s-2); color: var(--ink-muted); }
+.crumbs [aria-current="page"] { font-weight: 700; }
 .explorer-forms { display: flex; flex-wrap: wrap; gap: var(--s-8); margin-top: var(--s-8); }
 .explorer-forms form { flex: 1 1 18rem; }

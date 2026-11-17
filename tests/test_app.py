@@ -289,7 +289,8 @@ def test_nicht_verbunden_zeigt_hinweis_statt_formularen(client, as_student, kont
     konto.fail = (403, "bwsync-not-linked")
     antwort = seite(client, as_student)
     assert antwort.status_code == 403
-    assert "Ihre Dateien aus bwSync&amp;Share." in antwort.text
+    assert "Verbinden Sie Ihr bwSync&amp;Share-Konto, um Ihre Dateien hier zu sehen." in antwort.text
+    assert 'class="lead"' not in antwort.text
     assert "Portal-Team" not in antwort.text and "Administration" not in antwort.text
     assert "gilt nicht mehr" not in antwort.text and 'class="crumbs"' not in antwort.text
     assert "Ordner anlegen" not in antwort.text and "Adaptertext" not in antwort.text
@@ -332,6 +333,33 @@ def test_verbunden_zeigt_trennen_mit_bestaetigung(client, as_student, konto):
     assert f'data-done-open="{portal.url("/?ok=getrennt-offen")}"' in dialog
     assert '<button value="confirm" class="btn btn--primary">Konto trennen</button>' in dialog
     assert "data-submit-form" not in dialog  # kein Formular: app.js schickt DELETE
+
+
+def test_kopf_nur_ueberschrift_pfadleiste_tabelle(client, as_student, konto):
+    html = seite(client, as_student, "Studium").text
+    h1, nav, table = html.index("<h1>SyncShare</h1>"), html.index('class="crumbs"'), html.index('<table class="table">')
+    assert h1 < nav < table
+    assert "<h2" not in html[h1:table] and 'class="lead"' not in html  # kein Ordnername als Überschrift, kein Satz
+    assert 'aria-current="page">Studium<' in html
+    assert '<caption class="visually-hidden">Inhalt von Studium</caption>' in html
+    css = client.get(portal.url("/static/app.css"), headers=as_student).text
+    assert '.crumbs [aria-current="page"] { font-weight: 700; }' in css
+
+
+def test_trennen_dialog_text(client, as_student, konto):
+    html = seite(client, as_student).text
+    assert "Danach müssen Sie bwSync&amp;Share neu verbinden, um Ihre Dateien hier wieder zu sehen." in html
+    assert "Ihre Dateien bleiben\n      unverändert." in html
+
+
+def test_verbinden_zeigt_hinweis_vor_der_serverantwort(client, as_student):
+    js = client.get(portal.url("/static/app.js"), headers=as_student).text
+    klick = js[js.index('connect.addEventListener("click"') :]
+    assert klick.index("connect.disabled = true") < klick.index("say(status, WAITING)") < klick.index("await postJson")
+    # Nur ein Text beim Verbinden; andere Texte im Verbinden-Teil nur über stop() (Fehler, Button wieder aktiv)
+    verbinden = js[js.index("// --- Verbinden") : js.index("// --- Trennen")]
+    assert verbinden.count("say(") == 2  # WAITING beim Klick, Fehlertext in stop()
+    assert "wird vorbereitet" not in js and "werden geladen" not in js and "Anmeldeseite öffnen" not in js
 
 
 def test_ohne_konto_kein_trennen(client, as_student, konto):

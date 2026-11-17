@@ -5,6 +5,8 @@
   "use strict";
 
   var POLL_MS = 3000;
+  var WAITING = "Bitte melden Sie sich im neuen Tab bei bwSync&Share an und erlauben Sie den Zugriff. " +
+    "Diese Seite wartet darauf und zeigt danach Ihre Dateien.";
 
   function say(el, text) {
     if (el) el.textContent = text;
@@ -40,11 +42,13 @@
     connect.addEventListener("click", async function () {
       if (waiting) return;
       waiting = true;
+      // Sofort: Button aus, der einzige Hinweis da. Er ändert sich danach nicht mehr, nur ein Fehler ersetzt ihn.
       connect.disabled = true;
+      say(status, WAITING);
       // Tab sofort im Klick öffnen (sonst greift der Popup-Blocker), Adresse folgt nach dem Start.
       var tab = window.open("", "_blank");
-      if (tab) tab.opener = null; // die Anmeldeseite bekommt keinen Zugriff auf diese Seite
-      say(status, "Die Anmeldung bei bwSync&Share wird vorbereitet …");
+      if (!tab) return stop("Der neue Tab wurde blockiert. Bitte erlauben Sie Pop-ups für diese Seite.");
+      tab.opener = null; // die Anmeldeseite bekommt keinen Zugriff auf diese Seite
       var started;
       try {
         started = await postJson(connect.dataset.startUrl);
@@ -52,30 +56,16 @@
         started = { ok: false, status: 0, body: {} };
       }
       if (!started.ok || typeof started.body.login_url !== "string" || started.body.login_url.indexOf("https://") !== 0) {
-        if (tab) tab.close();
+        tab.close();
         return stop(problem(started));
       }
-      var loginUrl = started.body.login_url;
-      if (tab) {
-        tab.location.href = loginUrl;
-        say(status, "Bitte melden Sie sich im neuen Tab bei bwSync&Share an und erlauben Sie den Zugriff. " +
-          "Diese Seite wartet darauf und zeigt danach Ihre Dateien.");
-      } else {
-        say(status, "Bitte öffnen Sie die Anmeldeseite von bwSync&Share, melden Sie sich an und erlauben Sie den " +
-          "Zugriff: ");
-        var a = document.createElement("a");
-        a.href = loginUrl;
-        a.target = "_blank";
-        a.rel = "noopener noreferrer";
-        a.textContent = "Anmeldeseite öffnen";
-        status.appendChild(a);
-      }
+      tab.location.href = started.body.login_url;
       var until = Date.now() + 1000 * (Number(started.body.expires_in) || 1200);
       poll(until);
     });
 
     async function poll(until) {
-      if (Date.now() > until) return stop("Die Zeit für die Anmeldung ist abgelaufen. Bitte verbinden Sie erneut.");
+      if (Date.now() > until) return stop("Die Anmeldung ist abgelaufen. Bitte verbinden Sie erneut.");
       await new Promise(function (resolve) { setTimeout(resolve, POLL_MS); });
       var result;
       try {
@@ -84,13 +74,9 @@
         return poll(until); // kurz nicht erreichbar: weiter warten
       }
       if (!result.ok) return stop(problem(result));
-      if (result.body.state === "linked") {
-        say(status, "Verbunden. Ihre Dateien werden geladen …");
-        window.location.assign(connect.dataset.doneUrl);
-        return;
-      }
+      if (result.body.state === "linked") return window.location.assign(connect.dataset.doneUrl);
       if (result.body.state === "pending") return poll(until);
-      stop("Die Anmeldung ist abgelaufen oder wurde abgebrochen. Bitte verbinden Sie erneut.");
+      stop("Die Anmeldung wurde abgebrochen oder ist abgelaufen. Bitte verbinden Sie erneut.");
     }
 
     function stop(text) {

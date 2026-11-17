@@ -5,13 +5,11 @@
   {% endif %}
 </div>
 
-<p class="lead">Ihre Dateien aus bwSync&amp;Share.</p>
-
 {% include "_meldungen.html" %}
 
 {% if link_problem %}
-{# Ohne verbundenes Konto: nur Überschrift, Satz und Verbinden. #}
-{% if link_problem == "bwsync-link-invalid" %}<p id="verbindung">{{ link_invalid }}</p>{% endif %}
+{# Ohne verbundenes Konto: nur Überschrift, kurzer Hinweis und Verbinden. #}
+<p id="verbindung">{% if link_problem == "bwsync-link-invalid" %}{{ link_invalid }}{% else %}Verbinden Sie Ihr bwSync&amp;Share-Konto, um Ihre Dateien hier zu sehen.{% endif %}</p>
 <p>
   <button type="button" class="btn btn--primary" data-bwsync-connect data-start-url="{{ connect_url }}/start"
     data-poll-url="{{ connect_url }}/poll" data-done-url="{{ connected_url }}">bwSync&amp;Share verbinden</button>
@@ -21,15 +19,13 @@
 {% elif not folder %}
 <p id="liste"><a href="{{ root_url }}">Zur obersten Ebene</a></p>
 {% else %}
-<nav class="crumbs" aria-label="Ordnerpfad">
+<nav class="crumbs" id="liste" aria-label="Ordnerpfad">
   <ol>
     {% for c in crumbs %}
     <li>{% if loop.last %}<span aria-current="page">{{ c.name }}</span>{% else %}<a href="{{ c.url }}">{{ c.name }}</a>{% endif %}</li>
     {% endfor %}
   </ol>
 </nav>
-
-<h2 id="liste">{{ title }}</h2>
 
 {% if folder.truncated %}
 <div class="notice notice--warn"><p>Der Ordner hat mehr als 1000 Einträge. SyncShare zeigt nur die ersten 1000.</p></div>
@@ -109,8 +105,8 @@
   data-done-open="{{ disconnected_urls.open }}">
   <form method="dialog">
     <h2 id="trennen-titel">bwSync&amp;Share-Konto trennen?</h2>
-    <p>SyncShare kann danach nicht mehr auf Ihre Dateien zugreifen. Ihre Dateien in bwSync&amp;Share bleiben erhalten.
-      Das App-Passwort, das SyncShare beim Verbinden angelegt hat, wird in bwSync&amp;Share widerrufen.</p>
+    <p>Danach müssen Sie bwSync&amp;Share neu verbinden, um Ihre Dateien hier wieder zu sehen. Ihre Dateien bleiben
+      unverändert.</p>
     <div class="dialog__actions">
       <button value="cancel" class="btn btn--secondary" autofocus>Abbrechen</button>
       <button value="confirm" class="btn btn--primary">Konto trennen</button>
