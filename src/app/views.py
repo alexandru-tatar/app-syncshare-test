@@ -66,6 +66,7 @@ DONE = {
     "ordner": "Der Ordner wurde angelegt.",
     "hochgeladen": "Die Datei wurde hochgeladen.",
     "umbenannt": "Umbenannt.",
+    "verschoben": "Verschoben.",
     "geloescht": "Gelöscht. Es liegt jetzt im Papierkorb von bwSync&Share.",
     "verbunden": "Ihr bwSync&Share-Konto ist verbunden.",
     "getrennt": "Ihr bwSync&Share-Konto ist getrennt. Das App-Passwort von SyncShare wurde in bwSync&Share widerrufen.",
@@ -163,12 +164,13 @@ def build_router(portal: Portal) -> APIRouter:
         html = await portal.layout(title=page_title, body=body, current=portal.url("/"), user=user)
         return HTMLResponse(html, status_code=status_code)
 
-    def crumbs(path: str) -> list[dict[str, str]]:
-        items = [{"name": ROOT_NAME, "url": folder_url("")}]
+    def crumbs(path: str, url=None) -> list[dict[str, str]]:
+        url = url or folder_url
+        items = [{"name": ROOT_NAME, "url": url("")}]
         so_far = ""
         for part in path.split("/") if path else []:
             so_far = join(so_far, part)
-            items.append({"name": part, "url": folder_url(so_far)})
+            items.append({"name": part, "url": url(so_far)})
         return items
 
     async def explorer(
@@ -211,6 +213,7 @@ def build_router(portal: Portal) -> APIRouter:
                     "pfad": entry_path,
                     "art": kind,
                     "rename_url": link("/umbenennen", pfad=entry_path, art=kind),
+                    "move_url": link("/verschieben", pfad=entry_path, art=kind),
                     "delete_url": link("/loeschen", pfad=entry_path, art=kind),
                 }
             )
@@ -450,5 +453,92 @@ def build_router(portal: Portal) -> APIRouter:
         if as_json:
             return JSONResponse({"url": folder_url(folder, ok="umbenannt")}, headers={"Cache-Control": "no-store"})
         return back_to(folder, "umbenannt")
+
+    # --- Verschieben: Zielordner Ebene für Ebene auswählen, dann „Hierher verschieben“ (geht ohne JavaScript) ----
+
+    def move_blocker(pfad: str, art: str, ziel: str) -> str | None:
+        """Warum es in diesen Ordner nicht geht, oder None."""
+        if ziel == parent_of(pfad):
+            return f"{KINDS[art]} liegt schon hier. Bitte wählen Sie einen anderen Ordner."
+        if art == "ordner" and (ziel == pfad or ziel.startswith(pfad + "/")):
+            return "Ein Ordner kann nicht in sich selbst verschoben werden."
+        return None
+
+    async def move_page(user: User, pfad: str, art: str, ziel: str, *, errors=None, status_code=200):
+        errors = dict(errors or {})
+        folders, listed = [], False
+        try:
+            listing = await bwsync.list(ziel)
+            listed = True
+            for entry in listing.entries:
+                sub = join(ziel, entry.name)
+                if entry.type == "folder" and sub != pfad:  # den Ordner selbst nicht anbieten
+                    folders.append({"name": entry.name, "url": link("/verschieben", pfad=pfad, art=art, ziel=sub)})
+        except AdapterError as exc:
+            errors.setdefault("verschieben", problem_text(exc))
+            if status_code == 200:
+                status_code = page_status(exc)
+
+        def here(path: str) -> str:
+            return link("/verschieben", pfad=pfad, art=art, ziel=path)
+
+        return await render(
+            user,
+            "verschieben.html",
+            f"{KINDS[art]} verschieben – SyncShare",
+            status_code,
+            name=name_of(pfad),
+            where=parent_of(pfad) or ROOT_NAME,
+            pfad=pfad,
+            art=art,
+            kind=KINDS[art],
+            ziel=ziel,
+            ziel_name=name_of(ziel) if ziel else ROOT_NAME,
+            crumbs=crumbs(ziel, here),
+            folders=folders,
+            listed=listed,
+            blocker=move_blocker(pfad, art, ziel) if listed else None,
+            root_url=here(""),
+            action=link("/verschieben"),
+            back_url=folder_url(parent_of(pfad)),
+            errors=errors,
+        )
+
+    @router.get("/verschieben", response_class=HTMLResponse)
+    async def move_form(
+        user: User = Depends(portal.user),
+        pfad: Annotated[str, Query()] = "",
+        art: Annotated[str, Query()] = "",
+        ziel: Annotated[str | None, Query()] = None,
+    ) -> HTMLResponse:
+        if not target_ok(pfad, art):
+            return await explorer(user, "", errors={"liste": INVALID_PATH}, status_code=400)
+        ziel = parent_of(pfad) if ziel is None else ziel
+        if not valid_path(ziel):
+            return await move_page(user, pfad, art, "", errors={"verschieben": INVALID_PATH}, status_code=400)
+        return await move_page(user, pfad, art, ziel)
+
+    @router.post("/verschieben", response_class=HTMLResponse)
+    async def move(
+        user: User = Depends(portal.user),
+        pfad: Annotated[str, Form()] = "",
+        art: Annotated[str, Form()] = "",
+        ziel: Annotated[str, Form()] = "",
+    ) -> Response:
+        if not target_ok(pfad, art):
+            return await explorer(user, "", errors={"liste": INVALID_PATH}, status_code=400)
+        if not valid_path(ziel):
+            return await move_page(user, pfad, art, "", errors={"verschieben": INVALID_PATH}, status_code=400)
+        blocker = move_blocker(pfad, art, ziel)
+        if blocker:
+            return await move_page(user, pfad, art, ziel, errors={"verschieben": blocker}, status_code=400)
+        try:
+            await bwsync.move(pfad, join(ziel, name_of(pfad)))  # Name bleibt, nie überschreiben
+        except AdapterError as exc:
+            text = problem_text(exc)
+            if exc.type == "bwsync-exists":
+                text = f"In „{name_of(ziel) or ROOT_NAME}“ gibt es schon etwas mit dem Namen „{name_of(pfad)}“."
+            return await move_page(user, pfad, art, ziel, errors={"verschieben": text}, status_code=page_status(exc))
+        return back_to(ziel, "verschoben")
 
     return router

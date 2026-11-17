@@ -305,6 +305,77 @@ def test_skript_umbenennen_markiert_name_ohne_endung(client, as_student):
     assert 'Accept: "application/json"' in teil and "textContent" in teil and "innerHTML" not in js
 
 
+def test_zeile_hat_verschieben(client, as_student, konto):
+    html = seite(client, as_student, "Studium").text
+    assert (
+        f'<a href="{portal.url("/verschieben?pfad=Studium%2Fplan.pdf&art=datei").replace("&", "&amp;")}">Verschieben'
+        in html
+    )
+
+
+def test_verschieben_seite_zeigt_nur_ordner_und_startet_im_elternordner(client, as_student, konto):
+    seite_ = client.get(
+        portal.url("/verschieben"), headers=as_student, params={"pfad": "Studium/plan.pdf", "art": "datei"}
+    )
+    html = seite_.text
+    assert seite_.status_code == 200 and "<h1>Datei verschieben</h1>" in html
+    assert 'aria-current="page">Studium<' in html  # Start im eigenen Ordner
+    assert "Semester 5" in html and "plan.pdf</a>" not in html  # nur Ordner zur Auswahl
+    assert "Datei liegt schon hier." in html and "verschieben</button>" not in html
+    assert aenderungen(konto) == []
+
+
+def test_verschieben_navigieren_und_ordner_selbst_nicht_anbieten(client, as_student, konto):
+    html = client.get(
+        portal.url("/verschieben"), headers=as_student, params={"pfad": "Studium", "art": "ordner", "ziel": ""}
+    ).text
+    liste = html[html.index('class="folder-pick"') : html.index("</ul>", html.index('class="folder-pick"'))]
+    assert ">Ärger<" in liste and ">Studium<" not in liste  # der Ordner selbst fehlt
+    assert "Ordner liegt schon hier." in html  # Studium liegt schon auf der obersten Ebene
+    ziel = client.get(
+        portal.url("/verschieben"), headers=as_student, params={"pfad": "Studium", "art": "ordner", "ziel": "Ärger"}
+    ).text
+    assert "Nach „Ärger“ verschieben</button>" in ziel and 'name="ziel" value="Ärger"' in ziel
+
+
+def test_verschieben_datei_und_ordner(client, as_student, konto):
+    antwort = senden(client, as_student, "/verschieben", pfad="Studium/plan.pdf", art="datei", ziel="Ärger")
+    assert antwort.status_code == 303 and antwort.headers["location"] == portal.url("/?pfad=%C3%84rger&ok=verschoben")
+    assert konto.files["Ärger/plan.pdf"] == b"pdf" and "Studium/plan.pdf" not in konto.files
+    antwort = senden(client, as_student, "/verschieben", pfad="Studium", art="ordner", ziel="Ärger")
+    assert antwort.status_code == 303
+    assert "Ärger/Studium/Semester 5" in konto.folders
+    move = [c for c in konto.calls if c.url.path == "/bwsync/move"][-1]
+    assert json.loads(move.content) == {"from": "Studium", "to": "Ärger/Studium"}
+    assert "Verschoben." in client.get(antwort.headers["location"], headers=as_student).text
+
+
+@pytest.mark.parametrize(
+    "form,status,text",
+    [
+        ({"pfad": "Studium/plan.pdf", "art": "datei", "ziel": "Studium"}, 400, "liegt schon hier"),
+        ({"pfad": "Studium", "art": "ordner", "ziel": "Studium/Semester 5"}, 400, "nicht in sich selbst"),
+        ({"pfad": "Studium", "art": "ordner", "ziel": "Studium"}, 400, "nicht in sich selbst"),
+        ({"pfad": "zeta.txt", "art": "datei", "ziel": "../x"}, 400, "nicht öffnen"),
+        ({"pfad": "zeta.txt", "art": "datei", "ziel": "Fehlt"}, 409, "Diesen Ordner gibt es nicht"),
+    ],
+)
+def test_verschieben_wird_geprueft(client, as_student, konto, form, status, text):
+    vorher = (set(konto.files), set(konto.folders))
+    antwort = senden(client, as_student, "/verschieben", **form)
+    assert antwort.status_code == status and text in fehlerkasten(antwort.text)
+    assert "<a " not in fehlerkasten(antwort.text)  # Fehler ohne Formularfeld: Text
+    assert (set(konto.files), set(konto.folders)) == vorher
+
+
+def test_verschieben_name_schon_im_ziel(client, as_student, konto):
+    konto.files["Ärger/zeta.txt"] = b"anderes"
+    antwort = senden(client, as_student, "/verschieben", pfad="zeta.txt", art="datei", ziel="Ärger")
+    assert antwort.status_code == 409
+    assert "In „Ärger“ gibt es schon etwas mit dem Namen „zeta.txt“." in fehlerkasten(antwort.text)
+    assert konto.files["Ärger/zeta.txt"] == b"anderes" and "zeta.txt" in konto.files  # nie überschrieben
+
+
 def test_loeschen_fragt_erst_nach(client, as_student, konto):
     frage = client.get(portal.url("/loeschen"), headers=as_student, params={"pfad": "zeta.txt", "art": "datei"})
     assert frage.status_code == 200 and "wirklich löschen" in frage.text and "Papierkorb" in frage.text

@@ -16,3 +16,8 @@
 .rename-input { width: 100%; min-width: 12rem; padding: var(--s-1) var(--s-2); border: 1px solid var(--border-ui);
   border-radius: var(--radius); background: var(--bg); color: var(--ink); font: inherit; }
 .rename-error { font-size: .9375rem; }
+
+/* Verschieben: Liste der Unterordner im Zielordner */
+.folder-pick { margin: 0 0 var(--s-6); padding: 0; list-style: none; max-width: 40rem; }
+.folder-pick li { border-bottom: 1px solid var(--border-soft); }
+.folder-pick a { display: block; padding: var(--s-2) var(--s-3); }
