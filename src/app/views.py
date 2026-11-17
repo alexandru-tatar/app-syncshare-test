@@ -65,8 +65,11 @@ DONE = {
     "hochgeladen": "Die Datei wurde hochgeladen.",
     "umbenannt": "Umbenannt beziehungsweise verschoben.",
     "geloescht": "Gelöscht. Es liegt jetzt im Papierkorb von bwSync&Share.",
+    "verbunden": "Ihr bwSync&Share-Konto ist verbunden.",
 }
 KINDS = {"datei": "Datei", "ordner": "Ordner"}
+# Konto verbinden/trennen: Routen des Gateways (gleiche Herkunft), nicht der App; app.js ruft sie per fetch() auf.
+CONNECT_URL = "/connect/bwsync"
 
 
 def clean_name(raw: str | None) -> str:
@@ -215,6 +218,9 @@ def build_router(portal: Portal) -> APIRouter:
             root_url=folder_url(""),
             link_problem=link_problem,
             link_invalid=PROBLEMS["bwsync-link-invalid"],
+            connect_url=CONNECT_URL,
+            connected_url=folder_url("", ok="verbunden"),
+            js_url=portal.url("/static/app.js"),
             errors=errors,
             done=DONE.get(ok, "") if not errors else "",
             values=values or {},

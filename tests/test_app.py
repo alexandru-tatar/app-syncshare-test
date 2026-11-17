@@ -295,6 +295,32 @@ def test_nicht_verbunden_zeigt_hinweis_statt_formularen(client, as_student, kont
     assert "Ordner anlegen" not in antwort.text and "Adaptertext" not in antwort.text
 
 
+def test_nicht_verbunden_bietet_verbinden_an(client, as_student, konto):
+    konto.fail = (403, "bwsync-not-linked")
+    html = seite(client, as_student).text
+    button = re.search(r"<button[^>]*data-bwsync-connect[^>]*>bwSync&amp;Share verbinden</button>", html, re.S)
+    assert button
+    assert 'data-start-url="/connect/bwsync/start"' in button.group(0)
+    assert 'data-poll-url="/connect/bwsync/poll"' in button.group(0)
+    assert f'data-done-url="{portal.url("/?ok=verbunden")}"' in button.group(0)
+    assert 'id="verbinden-status" role="status"' in html
+    assert f'<script src="{portal.url("/static/app.js")}" defer></script>' in html
+    assert "<script>" not in html  # kein Inline-Skript (CSP der Apps)
+
+
+def test_skript_wird_ausgeliefert_und_nutzt_nur_gateway_routen(client, as_student):
+    antwort = client.get(portal.url("/static/app.js"), headers=as_student)
+    assert antwort.status_code == 200 and "javascript" in antwort.headers["content-type"]
+    js = antwort.text
+    assert "tab.opener = null" in js and 'credentials: "same-origin"' in js
+    assert "appPassword" not in js and "localStorage" not in js
+
+
+def test_nach_dem_verbinden_meldung(client, as_student, konto):
+    html = client.get(portal.url("/"), headers=as_student, params={"ok": "verbunden"}).text
+    assert "Ihr bwSync&amp;Share-Konto ist verbunden." in html
+
+
 def test_verbindung_ungueltig_sagt_neu_verbinden(client, as_student, konto):
     konto.fail = (403, "bwsync-link-invalid")
     antwort = seite(client, as_student)

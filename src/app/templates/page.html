@@ -7,6 +7,12 @@
 {% if link_problem %}
 {# Ohne verbundenes Konto: nur Überschrift, Satz und Verbinden. #}
 {% if link_problem == "bwsync-link-invalid" %}<p id="verbindung">{{ link_invalid }}</p>{% endif %}
+<p>
+  <button type="button" class="btn btn--primary" data-bwsync-connect data-start-url="{{ connect_url }}/start"
+    data-poll-url="{{ connect_url }}/poll" data-done-url="{{ connected_url }}">bwSync&amp;Share verbinden</button>
+</p>
+<p class="muted" id="verbinden-status" role="status" aria-live="polite"></p>
+<noscript><p>Zum Verbinden braucht diese Seite JavaScript.</p></noscript>
 {% elif not folder %}
 <p id="liste"><a href="{{ root_url }}">Zur obersten Ebene</a></p>
 {% else %}
@@ -89,3 +95,5 @@
   </form>
 </div>
 {% endif %}
+
+<script src="{{ js_url }}" defer></script>
