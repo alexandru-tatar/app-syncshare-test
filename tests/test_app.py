@@ -1,5 +1,6 @@
 import re
 from html import unescape
+from pathlib import Path
 
 import pytest
 from conftest import make_token
@@ -140,6 +141,9 @@ def test_ordner_gibt_es_schon(client, as_student, konto):
     antwort = senden(client, as_student, "/ordner", pfad="", name="Studium")
     assert antwort.status_code == 409 and "gibt es schon einen Ordner oder eine Datei" in antwort.text
     assert 'value="Studium"' in antwort.text
+    # Nur einmal: unter dem Feld, kein Fehlerkasten oben mit derselben Meldung
+    assert antwort.text.count("gibt es schon einen Ordner oder eine Datei") == 1
+    assert 'class="field__error"' in antwort.text and 'class="error-summary"' not in antwort.text
 
 
 @pytest.mark.parametrize("name", ["", "a/b", "x:y", "..", "50%", "a?b", "x" * 256])
@@ -319,8 +323,8 @@ def test_umbenennen_ausweichseite_fehler_am_feld(client, as_student, konto, form
     if text is None:
         assert antwort.status_code == 303
         return
-    assert antwort.status_code == 400 and text in antwort.text
-    assert re.search(r'<li><a href="#name">', fehlerkasten(antwort.text))
+    assert antwort.status_code == 400 and antwort.text.count(text) == 1  # nur einmal: unter dem Feld
+    assert 'class="field__error"' in antwort.text and 'class="error-summary"' not in antwort.text
 
 
 def test_tabelle_hat_daten_fuer_umbenennen(client, as_student, konto):
@@ -491,6 +495,25 @@ def test_download_fehler_ohne_link_im_fehlerkasten(client, as_student, konto):
     assert antwort.status_code == 404
     kasten = fehlerkasten(antwort.text)
     assert "<li>Die Datei konnte nicht heruntergeladen werden." in kasten and "<a " not in kasten
+    assert 'class="field__error"' not in antwort.text  # Fehler ohne Feld: nur oben
+
+
+def test_fehlerkasten_bei_mehreren_feldfehlern_ohne_links():
+    from app.views import templates
+
+    html = templates.get_template("_meldungen.html").render(
+        errors={"name": "Name fehlt.", "datei": "Datei fehlt."}, done=None
+    )
+    kasten = fehlerkasten(html)
+    assert "<li>Name fehlt.</li>" in kasten and "<li>Datei fehlt.</li>" in kasten
+    assert "<a " not in kasten and 'href="#' not in kasten
+
+
+def test_app_hat_keine_anker_auf_dieselbe_seite():
+    # Nur der Sprunglink des Portal-Layouts (#main) ist ein Anker; die Vorlagen der App haben keine.
+    vorlagen = Path(__file__).parents[1] / "src" / "app" / "templates"
+    for datei in vorlagen.glob("*.html"):
+        assert 'href="#' not in datei.read_text(encoding="utf-8"), datei.name
 
 
 def fehlerkasten(html: str) -> str:
