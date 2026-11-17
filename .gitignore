@@ -7,3 +7,20 @@ build/
 .env
 .env.*
 .DS_Store
+
+# Local credentials and runtime artifacts (never commit actual secrets).
+!.env.example
+.local/
+secrets/
+!.agents/skills/secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.db
+*.sqlite
+*.sqlite3
+.coverage
+htmlcov/
