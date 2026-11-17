@@ -22,8 +22,6 @@
 
 <h2 id="liste">{{ title }}</h2>
 
-{% if up_url %}<p><a href="{{ up_url }}">Eine Ebene höher</a></p>{% endif %}
-
 {% if folder.truncated %}
 <div class="notice notice--warn"><p>Der Ordner hat mehr als 1000 Einträge. SyncShare zeigt nur die ersten 1000.</p></div>
 {% endif %}
@@ -72,9 +70,9 @@
     <h2>Neuer Ordner</h2>
     <input type="hidden" name="pfad" value="{{ pfad }}">
     <div class="field">
-      <label for="name">Name des Ordners <span class="field__required">(Pflichtfeld)</span></label>
+      <label for="name" class="visually-hidden">Name des Ordners</label>
       <p class="field__hint" id="name-hinweis">Wird in „{{ title }}“ angelegt.</p>
-      <input type="text" id="name" name="name" value="{{ values.name or '' }}" maxlength="255" aria-describedby="name-hinweis" required>
+      <input type="text" id="name" name="name" value="{{ values.name or '' }}" maxlength="255" placeholder="Neuer Ordner" aria-describedby="name-hinweis" required>
       {% if errors.name %}<p class="field__error">{{ errors.name }}</p>{% endif %}
     </div>
     <button type="submit" class="btn">Ordner anlegen</button>
@@ -84,7 +82,7 @@
     <h2>Datei hochladen</h2>
     <input type="hidden" name="pfad" value="{{ pfad }}">
     <div class="field">
-      <label for="datei">Datei <span class="field__required">(Pflichtfeld)</span></label>
+      <label for="datei" class="visually-hidden">Datei</label>
       <p class="field__hint" id="datei-hinweis">Bis {{ max_mb }} MB, in „{{ title }}“. Vorhandene Dateien werden nie überschrieben.</p>
       <input type="file" id="datei" name="datei" aria-describedby="datei-hinweis" required>
       {% if errors.datei %}<p class="field__error">{{ errors.datei }}</p>{% endif %}

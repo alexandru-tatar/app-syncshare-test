@@ -98,7 +98,16 @@ def test_navigieren_mit_brotkrumen(client, as_student, konto):
     nav = html[html.index('class="crumbs"') : html.index("</nav>", html.index('class="crumbs"'))]
     assert portal.url("/") in links(nav) and portal.url("/?pfad=Studium") in links(nav)
     assert 'aria-current="page">Semester 5<' in nav
-    assert "Dieser Ordner ist leer." in html and "Eine Ebene höher" in html
+    assert "Dieser Ordner ist leer." in html and "Eine Ebene höher" not in html  # die Pfadleiste reicht
+
+
+def test_formularfelder_ohne_sichtbares_label(client, as_student, konto):
+    html = seite(client, as_student).text
+    assert '<label for="name" class="visually-hidden">Name des Ordners</label>' in html
+    assert '<label for="datei" class="visually-hidden">Datei</label>' in html
+    assert "(Pflichtfeld)" not in html
+    assert re.search(r'<input type="text" id="name"[^>]*placeholder="Neuer Ordner"[^>]*required>', html)
+    assert re.search(r'<input type="file" id="datei"[^>]*required>', html)
 
 
 @pytest.mark.parametrize("pfad", ["..", "a/../b", "/etc", "a//b", "a:b", "x%2fy", "a\\b"])

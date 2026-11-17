@@ -212,7 +212,6 @@ def build_router(portal: Portal) -> APIRouter:
             rows=rows,
             crumbs=crumbs(path) if folder else [],
             title=name_of(path) if path else ROOT_NAME,
-            up_url=folder_url(parent_of(path)) if path and folder else None,
             root_url=folder_url(""),
             link_problem=link_problem,
             errors=errors,
