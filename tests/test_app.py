@@ -219,6 +219,8 @@ def test_umbenennen_fehler_vom_adapter(client, as_student, konto, form, text):
     antwort = senden(client, as_student, "/umbenennen", pfad="Studium/plan.pdf", art="datei", **form)
     assert antwort.status_code == 409 and text in antwort.text
     assert konto.files["Studium/plan.pdf"] == b"pdf"
+    feld = "ziel" if form["ziel"] else "name"
+    assert re.search(rf'<li><a href="#{feld}">[^<]*{text}', fehlerkasten(antwort.text))  # mit Feld: Link ins Feld
 
 
 @pytest.mark.parametrize(
@@ -256,6 +258,20 @@ def test_ordner_mit_inhalt_wird_nicht_geloescht(client, as_student, konto):
     antwort = senden(client, as_student, "/loeschen", pfad="Studium", art="ordner")
     assert antwort.status_code == 409 and "Der Ordner ist nicht leer." in antwort.text
     assert "Studium/plan.pdf" in konto.files
+    kasten = fehlerkasten(antwort.text)
+    assert "<li>Der Ordner ist nicht leer." in kasten and "<a " not in kasten  # ohne Feld: Text, kein Link
+
+
+def test_download_fehler_ohne_link_im_fehlerkasten(client, as_student, konto):
+    antwort = client.get(portal.url("/datei"), headers=as_student, params={"pfad": "fehlt.txt"})
+    assert antwort.status_code == 404
+    kasten = fehlerkasten(antwort.text)
+    assert "<li>Die Datei konnte nicht heruntergeladen werden." in kasten and "<a " not in kasten
+
+
+def fehlerkasten(html: str) -> str:
+    start = html.index('class="error-summary"')
+    return html[start : html.index("</div>", start)]
 
 
 @pytest.mark.parametrize(

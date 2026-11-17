@@ -1,9 +1,11 @@
+{# Nur Fehler zu einem Formularfeld verlinken (Sprung ins Feld); andere, z. B. von bwSync beim Löschen, sind Text. #}
+{% set formularfelder = ("name", "datei", "ziel") %}
 {% if errors %}
 <div class="error-summary" role="alert">
   <h2>Das hat nicht geklappt</h2>
   <ul>
     {% for field, message in errors.items() %}
-    <li><a href="#{{ field }}">{{ message }}</a></li>
+    <li>{% if field in formularfelder %}<a href="#{{ field }}">{{ message }}</a>{% else %}{{ message }}{% endif %}</li>
     {% endfor %}
   </ul>
 </div>
