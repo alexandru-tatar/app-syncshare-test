@@ -289,8 +289,17 @@ def test_nicht_verbunden_zeigt_hinweis_statt_formularen(client, as_student, kont
     konto.fail = (403, "bwsync-not-linked")
     antwort = seite(client, as_student)
     assert antwort.status_code == 403
-    assert "bwSync&amp;Share ist nicht verbunden" in antwort.text and "Portal-Team" in antwort.text
+    assert "Ihre Dateien aus bwSync&amp;Share." in antwort.text
+    assert "Portal-Team" not in antwort.text and "Administration" not in antwort.text
+    assert "gilt nicht mehr" not in antwort.text and 'class="crumbs"' not in antwort.text
     assert "Ordner anlegen" not in antwort.text and "Adaptertext" not in antwort.text
+
+
+def test_verbindung_ungueltig_sagt_neu_verbinden(client, as_student, konto):
+    konto.fail = (403, "bwsync-link-invalid")
+    antwort = seite(client, as_student)
+    assert "gilt nicht mehr" in antwort.text and "Bitte verbinden Sie es neu." in antwort.text
+    assert "Ordner anlegen" not in antwort.text
 
 
 def test_adapter_nicht_erreichbar(client, as_student, konto):

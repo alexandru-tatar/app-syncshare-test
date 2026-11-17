@@ -40,10 +40,10 @@ UNAVAILABLE = "bwSync&Share ist gerade nicht erreichbar. Bitte versuchen Sie es 
 
 # Fehlertypen des Adapters (problem+json „type“), in eigenen Worten
 PROBLEMS = {
-    "bwsync-not-linked": "Für Sie ist im Portal noch kein bwSync&Share-Konto hinterlegt. "
-    "Bitte wenden Sie sich an das Portal-Team.",
+    "bwsync-not-linked": "Ihr bwSync&Share-Konto ist nicht verbunden. Bitte verbinden Sie es auf der Startseite "
+    "von SyncShare.",
     "bwsync-link-invalid": "Die Verbindung zu Ihrem bwSync&Share-Konto gilt nicht mehr, zum Beispiel weil das "
-    "App-Passwort widerrufen wurde. Bitte wenden Sie sich an das Portal-Team.",
+    "App-Passwort widerrufen wurde. Bitte verbinden Sie es neu.",
     "bwsync-forbidden": "Dafür fehlt Ihnen in bwSync&Share die Berechtigung, zum Beispiel in einem nur lesbar "
     "geteilten Ordner.",
     "bwsync-exists": "Hier gibt es schon einen Ordner oder eine Datei mit diesem Namen. Bitte wählen Sie einen "
@@ -180,7 +180,7 @@ def build_router(portal: Portal) -> APIRouter:
                 folder = await bwsync.list(path)
             except AdapterError as exc:
                 if exc.type in LINK_PROBLEMS:
-                    link_problem = PROBLEMS[exc.type]
+                    link_problem = exc.type
                 else:
                     errors.setdefault("liste", problem_text(exc))
                 if status_code == 200:
@@ -214,6 +214,7 @@ def build_router(portal: Portal) -> APIRouter:
             title=name_of(path) if path else ROOT_NAME,
             root_url=folder_url(""),
             link_problem=link_problem,
+            link_invalid=PROBLEMS["bwsync-link-invalid"],
             errors=errors,
             done=DONE.get(ok, "") if not errors else "",
             values=values or {},

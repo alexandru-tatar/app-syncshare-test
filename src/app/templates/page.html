@@ -1,14 +1,12 @@
 <h1>SyncShare</h1>
 
-<p class="lead">Ihre Dateien in bwSync&amp;Share: Ordner ansehen und anlegen, Dateien hoch- und herunterladen, umbenennen und löschen.</p>
+<p class="lead">Ihre Dateien aus bwSync&amp;Share.</p>
 
 {% include "_meldungen.html" %}
 
 {% if link_problem %}
-<div class="notice notice--warn" role="status">
-  <h2>bwSync&amp;Share ist nicht verbunden</h2>
-  <p>{{ link_problem }}</p>
-</div>
+{# Ohne verbundenes Konto: nur Überschrift, Satz und Verbinden. #}
+{% if link_problem == "bwsync-link-invalid" %}<p id="verbindung">{{ link_invalid }}</p>{% endif %}
 {% elif not folder %}
 <p id="liste"><a href="{{ root_url }}">Zur obersten Ebene</a></p>
 {% else %}
