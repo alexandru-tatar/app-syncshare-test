@@ -1,8 +1,10 @@
 """Testumgebung: Betriebsmodus mit festem Testschlüssel statt echtem Portal."""
 
+import io
 import json
 import os
 import time
+import zipfile
 from types import SimpleNamespace
 
 os.environ.pop("PORTAL_DEV", None)
@@ -140,6 +142,16 @@ class FakeBwSync:
                     if p.startswith(source + "/"):
                         self.files[target + p[len(source) :]] = self.files.pop(p)
             return httpx.Response(204)
+        if path.startswith("/bwsync/zip/") and method == "GET":
+            rel = path.removeprefix("/bwsync/zip/")
+            if rel not in self.folders or rel == "":
+                return self.problem(404)
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w") as archive:
+                for name, data in sorted(self.files.items()):
+                    if name.startswith(rel + "/"):
+                        archive.writestr(name, data)
+            return httpx.Response(200, content=buffer.getvalue(), headers={"Content-Type": "application/zip"})
         if path.startswith("/bwsync/files/"):
             rel = path.removeprefix("/bwsync/files/")
             if method == "PUT":

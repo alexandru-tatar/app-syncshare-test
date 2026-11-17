@@ -188,6 +188,30 @@ def test_ohne_datei_deutsche_meldung_statt_422(client, as_student, konto):
     assert "Bitte wählen Sie eine Datei aus." in antwort.text
 
 
+def test_ordner_als_zip_herunterladen(client, as_student, konto):
+    import io
+    import zipfile
+
+    html = seite(client, as_student).text
+    zeile = html[html.index('data-pfad="Studium"') : html.index("</tr>", html.index('data-pfad="Studium"'))]
+    assert f'<a href="{portal.url("/zip?pfad=Studium")}">Herunterladen' in zeile and "als ZIP" in zeile
+    antwort = client.get(portal.url("/zip"), headers=as_student, params={"pfad": "Studium"})
+    assert antwort.status_code == 200 and antwort.headers["content-type"] == "application/zip"
+    assert antwort.headers["content-disposition"] == "attachment; filename*=UTF-8''Studium.zip"
+    assert antwort.headers["cache-control"] == "no-store"
+    with zipfile.ZipFile(io.BytesIO(antwort.content)) as archiv:
+        assert archiv.read("Studium/plan.pdf") == b"pdf"
+    assert konto.calls[-1].url.raw_path == b"/bwsync/zip/Studium"
+
+
+@pytest.mark.parametrize("pfad,status", [("", 400), ("../x", 400), ("Fehlt", 404)])
+def test_ordner_zip_fehler(client, as_student, konto, pfad, status):
+    antwort = client.get(portal.url("/zip"), headers=as_student, params={"pfad": pfad})
+    assert antwort.status_code == status and "text/html" in antwort.headers["content-type"]
+    if status == 404:
+        assert "Der Ordner konnte nicht heruntergeladen werden." in fehlerkasten(antwort.text)
+
+
 def test_umbenennen_ausweichseite_ohne_zielordner(client, as_student, konto):
     formular = client.get(
         portal.url("/umbenennen"), headers=as_student, params={"pfad": "Studium/plan.pdf", "art": "datei"}

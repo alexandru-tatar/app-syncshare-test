@@ -15,6 +15,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from starlette.background import BackgroundTask
+from starlette.responses import StreamingResponse
 
 from platform_sdk import AdapterError, Portal, User
 
@@ -205,7 +207,7 @@ def build_router(portal: Portal) -> APIRouter:
                     "size": "–" if is_folder else size_text(entry.size),
                     "modified": date_text(entry.modified),
                     "open_url": folder_url(entry_path) if is_folder else None,
-                    "download_url": None if is_folder else link("/datei", pfad=entry_path),
+                    "download_url": link("/zip" if is_folder else "/datei", pfad=entry_path),
                     "pfad": entry_path,
                     "art": kind,
                     "rename_url": link("/umbenennen", pfad=entry_path, art=kind),
@@ -308,6 +310,27 @@ def build_router(portal: Portal) -> APIRouter:
                 "X-Content-Type-Options": "nosniff",
                 "Cache-Control": "no-store",
             },
+        )
+
+    @router.get("/zip")
+    async def download_folder(user: User = Depends(portal.user), pfad: Annotated[str, Query()] = "") -> Response:
+        """Ordner als ZIP, von bwSync gestreamt (nicht im Speicher der App); nicht die oberste Ebene."""
+        if not valid_path(pfad, root=False):
+            return await explorer(user, "", errors={"liste": INVALID_PATH}, status_code=400)
+        try:
+            stream = await bwsync.download_zip(pfad)
+        except AdapterError as exc:
+            msg = "Der Ordner konnte nicht heruntergeladen werden. " + problem_text(exc)
+            return await explorer(user, parent_of(pfad), errors={"liste": msg}, status_code=page_status(exc))
+        return StreamingResponse(
+            stream,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(name_of(pfad) + '.zip', safe='')}",
+                "X-Content-Type-Options": "nosniff",
+                "Cache-Control": "no-store",
+            },
+            background=BackgroundTask(stream.aclose),
         )
 
     def target_ok(pfad: str, art: str) -> bool:

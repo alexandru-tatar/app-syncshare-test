@@ -56,7 +56,7 @@
         <td>{{ r.modified }}</td>
         <td>
           <div class="actions">
-            {% if r.download_url %}<a href="{{ r.download_url }}">Herunterladen<span class="visually-hidden">: {{ r.name }}</span></a>{% endif %}
+            <a href="{{ r.download_url }}">Herunterladen<span class="visually-hidden">: {{ r.name }}{% if r.folder %} als ZIP{% endif %}</span></a>
             <a href="{{ r.rename_url }}" data-rename>Umbenennen<span class="visually-hidden">: {{ r.name }}</span></a>
             <a href="{{ r.delete_url }}">Löschen<span class="visually-hidden">: {{ r.name }}</span></a>
           </div>
