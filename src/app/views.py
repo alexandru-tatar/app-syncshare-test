@@ -6,6 +6,7 @@ Seiten mit GET ändern nie etwas; Anlegen, Hochladen, Umbenennen und Löschen si
 leiten danach auf die Ordneransicht um (Post/Redirect/Get). Fremde Herkunft lehnt das Gateway bei POST ab.
 """
 
+import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
@@ -113,6 +114,17 @@ def parent_of(path: str) -> str:
 
 def name_of(path: str) -> str:
     return path.rsplit("/", 1)[-1]
+
+
+def attachment(filename: str) -> str:
+    """Content-Disposition für einen Download: Anführungszeichen, Backslash und Steuerzeichen entfernt,
+    der volle Name UTF-8-kodiert (filename*), dazu ein reiner ASCII-Name für alte Browser."""
+    clean = "".join(c for c in filename if c.isprintable() and c not in '"\\').strip() or "download"
+    ascii_name = unicodedata.normalize("NFKD", clean).encode("ascii", "ignore").decode("ascii").strip()
+    stem, dot, ext = ascii_name.rpartition(".")
+    if not ascii_name or (dot and not stem.strip()):  # z. B. „日本.txt“ -> „download.txt“
+        ascii_name = "download" + (dot + ext if dot else "")
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(clean, safe='')}"
 
 
 def size_text(size: int | None) -> str:
@@ -309,7 +321,7 @@ def build_router(portal: Portal) -> APIRouter:
             data,
             media_type="application/octet-stream",
             headers={
-                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(name_of(pfad), safe='')}",
+                "Content-Disposition": attachment(name_of(pfad)),
                 "X-Content-Type-Options": "nosniff",
                 "Cache-Control": "no-store",
             },
@@ -329,7 +341,7 @@ def build_router(portal: Portal) -> APIRouter:
             stream,
             media_type="application/zip",
             headers={
-                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(name_of(pfad) + '.zip', safe='')}",
+                "Content-Disposition": attachment(name_of(pfad) + ".zip"),
                 "X-Content-Type-Options": "nosniff",
                 "Cache-Control": "no-store",
             },

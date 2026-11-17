@@ -154,7 +154,10 @@ def test_hochladen_in_den_aktuellen_ordner_und_herunterladen(client, as_student,
     assert "Die Datei wurde hochgeladen." in html
     download = client.get(portal.url("/datei"), headers=as_student, params={"pfad": "Studium/Semester 5/notiz ä.txt"})
     assert download.status_code == 200 and download.content == b"Hallo Welt"
-    assert download.headers["content-disposition"] == "attachment; filename*=UTF-8''notiz%20%C3%A4.txt"
+    assert (
+        download.headers["content-disposition"]
+        == "attachment; filename=\"notiz a.txt\"; filename*=UTF-8''notiz%20%C3%A4.txt"
+    )
     assert download.headers["x-content-type-options"] == "nosniff"
     assert download.headers["content-type"] == "application/octet-stream"
 
@@ -197,11 +200,39 @@ def test_ordner_als_zip_herunterladen(client, as_student, konto):
     assert f'<a href="{portal.url("/zip?pfad=Studium")}">Herunterladen' in zeile and "als ZIP" in zeile
     antwort = client.get(portal.url("/zip"), headers=as_student, params={"pfad": "Studium"})
     assert antwort.status_code == 200 and antwort.headers["content-type"] == "application/zip"
-    assert antwort.headers["content-disposition"] == "attachment; filename*=UTF-8''Studium.zip"
+    assert (
+        antwort.headers["content-disposition"] == "attachment; filename=\"Studium.zip\"; filename*=UTF-8''Studium.zip"
+    )
     assert antwort.headers["cache-control"] == "no-store"
     with zipfile.ZipFile(io.BytesIO(antwort.content)) as archiv:
         assert archiv.read("Studium/plan.pdf") == b"pdf"
     assert konto.calls[-1].url.raw_path == b"/bwsync/zip/Studium"
+
+
+def test_zip_dateiname_ohne_anfuehrungszeichen(client, as_student, konto):
+    ordner = 'Ärger "x"'
+    konto.folders.add(ordner)
+    konto.files[ordner + "/a.txt"] = b"a"
+    antwort = client.get(portal.url("/zip"), headers=as_student, params={"pfad": ordner})
+    assert antwort.status_code == 200
+    kopf = antwort.headers["content-disposition"]
+    assert kopf == "attachment; filename=\"Arger x.zip\"; filename*=UTF-8''%C3%84rger%20x.zip"
+    assert kopf.count('"') == 2  # nur die Anführungszeichen um den ASCII-Namen
+
+
+@pytest.mark.parametrize(
+    "name,erwartet",
+    [
+        ("plan.pdf", "attachment; filename=\"plan.pdf\"; filename*=UTF-8''plan.pdf"),
+        ('a"b\\c\x07.txt', "attachment; filename=\"abc.txt\"; filename*=UTF-8''abc.txt"),
+        ("日本.txt", "attachment; filename=\"download.txt\"; filename*=UTF-8''%E6%97%A5%E6%9C%AC.txt"),
+        ('""', "attachment; filename=\"download\"; filename*=UTF-8''download"),
+    ],
+)
+def test_attachment_kopf(name, erwartet):
+    from app.views import attachment
+
+    assert attachment(name) == erwartet
 
 
 @pytest.mark.parametrize("pfad,status", [("", 400), ("../x", 400), ("Fehlt", 404)])
