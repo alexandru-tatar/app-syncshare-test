@@ -6,12 +6,9 @@ Seiten mit GET ändern nie etwas; Anlegen, Hochladen, Umbenennen und Löschen si
 leiten danach auf die Ordneransicht um (Post/Redirect/Get). Fremde Herkunft lehnt das Gateway bei POST ab.
 """
 
-import unicodedata
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote, urlencode
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -20,19 +17,17 @@ from starlette.background import BackgroundTask
 from starlette.responses import StreamingResponse
 
 from platform_sdk import AdapterError, Portal, User
+from platform_sdk.adapters import transport
+from platform_sdk.adapters.bwsync import connect, paths
+from platform_sdk.adapters.bwsync import errors as bwsync_errors
+from platform_sdk.adapters.bwsync.paths import clean_name, join, name_of, parent_of, valid_name, valid_path
+from platform_sdk.common.dates import format_datetime
+from platform_sdk.common.downloads import download_headers
+from platform_sdk.common.sizes import format_size
 
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")  # autoescape ist an
 
 MAX_BYTES = 2 * 1024 * 1024  # 2 MB je Datei
-MAX_NAME = 255
-MAX_PATH = 1024
-FORBIDDEN_CHARS = "/\\:%?#"  # kann der Adapter nicht verarbeiten
-
-try:
-    LOCAL_TIME = ZoneInfo("Europe/Berlin")
-except ZoneInfoNotFoundError:  # ohne Zeitzonendaten im Image: UTC anzeigen
-    LOCAL_TIME = None
-
 ROOT_NAME = "Mein bwSync&Share"
 INVALID_NAME = (
     "Bitte geben Sie einen Namen an. Er darf höchstens 255 Zeichen lang sein und keines dieser Zeichen "
@@ -41,25 +36,31 @@ INVALID_NAME = (
 INVALID_PATH = "Diesen Ordner kann SyncShare nicht öffnen."
 UNAVAILABLE = "bwSync&Share ist gerade nicht erreichbar. Bitte versuchen Sie es später erneut."
 
-# Fehlertypen des Adapters (problem+json „type“), in eigenen Worten
+# Fehlertypen (Konstanten aus dem SDK), in eigenen Worten; Bedeutung: platform_sdk/adapters/bwsync/README.md
 PROBLEMS = {
-    "bwsync-not-linked": "Ihr bwSync&Share-Konto ist nicht verbunden. Bitte verbinden Sie es auf der Startseite "
+    bwsync_errors.NOT_LINKED: "Ihr bwSync&Share-Konto ist nicht verbunden. Bitte verbinden Sie es auf der Startseite "
     "von SyncShare.",
-    "bwsync-link-invalid": "Die Verbindung zu Ihrem bwSync&Share-Konto gilt nicht mehr, zum Beispiel weil das "
+    bwsync_errors.LINK_INVALID: "Die Verbindung zu Ihrem bwSync&Share-Konto gilt nicht mehr, zum Beispiel weil das "
     "App-Passwort widerrufen wurde. Bitte verbinden Sie es neu.",
-    "bwsync-forbidden": "Dafür fehlt Ihnen in bwSync&Share die Berechtigung, zum Beispiel in einem nur lesbar "
+    bwsync_errors.FORBIDDEN: "Dafür fehlt Ihnen in bwSync&Share die Berechtigung, zum Beispiel in einem nur lesbar "
     "geteilten Ordner.",
-    "bwsync-exists": "Hier gibt es schon einen Ordner oder eine Datei mit diesem Namen. Bitte wählen Sie einen "
+    bwsync_errors.EXISTS: "Hier gibt es schon einen Ordner oder eine Datei mit diesem Namen. Bitte wählen Sie einen "
     "anderen Namen.",
-    "bwsync-parent-missing": "Diesen Ordner gibt es nicht (mehr). Bitte laden Sie die Seite neu.",
+    bwsync_errors.PARENT_MISSING: "Diesen Ordner gibt es nicht (mehr). Bitte laden Sie die Seite neu.",
+    bwsync_errors.NOT_FOUND: "Das gibt es nicht (mehr). Vielleicht wurde es in bwSync&Share verschoben oder gelöscht.",
+    bwsync_errors.CONFLICT: "Das geht in bwSync&Share gerade nicht. Bitte laden Sie die Seite neu und versuchen Sie es "
+    "erneut.",
+    bwsync_errors.TOO_LARGE: "Die Datei ist zu groß.",
+    bwsync_errors.LOCKED: "Die Datei ist gerade gesperrt, zum Beispiel weil sie geöffnet ist. Bitte versuchen Sie es "
+    "später erneut.",
 }
-LINK_PROBLEMS = {"bwsync-not-linked", "bwsync-link-invalid"}
+# Fehler ohne eigenen type (z. B. 400): nach status
 STATUS_TEXTS = {
     400: "Das geht so nicht. Bitte prüfen Sie Ordner und Namen.",
-    404: "Das gibt es nicht (mehr). Vielleicht wurde es in bwSync&Share verschoben oder gelöscht.",
-    412: PROBLEMS["bwsync-exists"],
-    413: "Die Datei ist zu groß.",
-    423: "Die Datei ist gerade gesperrt, zum Beispiel weil sie geöffnet ist. Bitte versuchen Sie es später erneut.",
+    404: PROBLEMS[bwsync_errors.NOT_FOUND],
+    412: PROBLEMS[bwsync_errors.EXISTS],
+    413: PROBLEMS[bwsync_errors.TOO_LARGE],
+    423: PROBLEMS[bwsync_errors.LOCKED],
 }
 # Erfolgsmeldungen nach der Umleitung: nur feste Schlüssel, kein Text aus der Adresse
 DONE = {
@@ -77,75 +78,7 @@ DONE = {
 }
 KINDS = {"datei": "Datei", "ordner": "Ordner"}
 # Konto verbinden/trennen: Routen des Gateways (gleiche Herkunft), nicht der App; app.js ruft sie per fetch() auf.
-CONNECT_URL = "/connect/bwsync"
-
-
-def clean_name(raw: str | None) -> str:
-    """Nur der Dateiname, ohne Pfad und Steuerzeichen."""
-    name = Path((raw or "").replace("\\", "/")).name
-    return "".join(c for c in name if c.isprintable()).strip()
-
-
-def valid_name(name: str) -> bool:
-    return (
-        0 < len(name) <= MAX_NAME
-        and name not in (".", "..")
-        and name == name.strip()
-        and not any(c in FORBIDDEN_CHARS for c in name)
-        and name.isprintable()
-    )
-
-
-def valid_path(path: str, *, root: bool = True) -> bool:
-    """Relativer Pfad im eigenen Konto; "" ist die oberste Ebene (nur wo erlaubt)."""
-    if path == "":
-        return root
-    return len(path) <= MAX_PATH and all(valid_name(part) for part in path.split("/"))
-
-
-def join(folder: str, name: str) -> str:
-    return f"{folder}/{name}" if folder else name
-
-
-def parent_of(path: str) -> str:
-    return path.rsplit("/", 1)[0] if "/" in path else ""
-
-
-def name_of(path: str) -> str:
-    return path.rsplit("/", 1)[-1]
-
-
-def attachment(filename: str) -> str:
-    """Content-Disposition für einen Download: Anführungszeichen, Backslash und Steuerzeichen entfernt,
-    der volle Name UTF-8-kodiert (filename*), dazu ein reiner ASCII-Name für alte Browser."""
-    clean = "".join(c for c in filename if c.isprintable() and c not in '"\\').strip() or "download"
-    ascii_name = unicodedata.normalize("NFKD", clean).encode("ascii", "ignore").decode("ascii").strip()
-    stem, dot, ext = ascii_name.rpartition(".")
-    if not ascii_name or (dot and not stem.strip()):  # z. B. „日本.txt“ -> „download.txt“
-        ascii_name = "download" + (dot + ext if dot else "")
-    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(clean, safe='')}"
-
-
-def size_text(size: int | None) -> str:
-    if size is None:
-        return "–"
-    if size < 1024:
-        return f"{size} B"
-    for unit in ("KB", "MB", "GB", "TB"):
-        size /= 1024
-        if size < 1024 or unit == "TB":
-            return f"{size:.1f} {unit}".replace(".", ",")
-    return "–"  # pragma: no cover
-
-
-def date_text(value: datetime | None) -> str:
-    if value is None:
-        return "–"
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=UTC)
-    if LOCAL_TIME is None:
-        return value.astimezone(UTC).strftime("%d.%m.%Y, %H:%M UTC")
-    return value.astimezone(LOCAL_TIME).strftime("%d.%m.%Y, %H:%M")
+CONNECT_URL = connect.ROUTES["status"]
 
 
 def problem_text(exc: AdapterError) -> str:
@@ -176,12 +109,9 @@ def build_router(portal: Portal) -> APIRouter:
 
     def crumbs(path: str, url=None) -> list[dict[str, str]]:
         url = url or folder_url
-        items = [{"name": ROOT_NAME, "url": url("")}]
-        so_far = ""
-        for part in path.split("/") if path else []:
-            so_far = join(so_far, part)
-            items.append({"name": part, "url": url(so_far)})
-        return items
+        return [{"name": ROOT_NAME, "url": url("")}] + [
+            {"name": c["name"], "url": url(c["path"])} for c in paths.breadcrumbs(path)
+        ]
 
     async def explorer(
         user: User,
@@ -201,7 +131,7 @@ def build_router(portal: Portal) -> APIRouter:
             try:
                 folder = await portal.adapters.bwsync.list(path)
             except AdapterError as exc:
-                if exc.type in LINK_PROBLEMS:
+                if exc.type in bwsync_errors.LINK_PROBLEMS:
                     link_problem = exc.type
                 else:
                     errors.setdefault("liste", problem_text(exc))
@@ -216,8 +146,8 @@ def build_router(portal: Portal) -> APIRouter:
                 {
                     "name": entry.name,
                     "folder": is_folder,
-                    "size": "–" if is_folder else size_text(entry.size),
-                    "modified": date_text(entry.modified),
+                    "size": format_size(None if is_folder else entry.size),
+                    "modified": format_datetime(entry.modified),
                     "open_url": folder_url(entry_path) if is_folder else None,
                     "download_url": link("/zip" if is_folder else "/datei", pfad=entry_path),
                     "pfad": entry_path,
@@ -239,7 +169,7 @@ def build_router(portal: Portal) -> APIRouter:
             title=name_of(path) if path else ROOT_NAME,
             root_url=folder_url(""),
             link_problem=link_problem,
-            link_invalid=PROBLEMS["bwsync-link-invalid"],
+            link_invalid=PROBLEMS[bwsync_errors.LINK_INVALID],
             connect_url=CONNECT_URL,
             connected_url=folder_url("", ok="verbunden"),
             disconnected_urls={
@@ -273,7 +203,7 @@ def build_router(portal: Portal) -> APIRouter:
         try:
             await portal.adapters.bwsync.mkdir(join(pfad, name))
         except AdapterError as exc:
-            if exc.type in LINK_PROBLEMS:
+            if exc.type in bwsync_errors.LINK_PROBLEMS:
                 return await explorer(user, pfad, status_code=page_status(exc))
             return await explorer(
                 user, pfad, errors={"name": problem_text(exc)}, status_code=page_status(exc), values={"name": name}
@@ -311,18 +241,14 @@ def build_router(portal: Portal) -> APIRouter:
             data = await portal.adapters.bwsync.download(pfad, max_bytes=MAX_BYTES)
         except AdapterError as exc:
             msg = "Die Datei konnte nicht heruntergeladen werden. " + problem_text(exc)
-            if exc.status == 413:
+            if exc.type == transport.DOWNLOAD_TOO_LARGE:
                 msg = f"Die Datei ist größer als {MAX_BYTES // (1024 * 1024)} MB; SyncShare kann sie nicht abholen."
             return await explorer(user, parent_of(pfad), errors={"liste": msg}, status_code=page_status(exc))
         # Nie im Browser ausführen oder anzeigen: immer als Download, ohne Typ-Erkennung.
         return Response(
             data,
             media_type="application/octet-stream",
-            headers={
-                "Content-Disposition": attachment(name_of(pfad)),
-                "X-Content-Type-Options": "nosniff",
-                "Cache-Control": "no-store",
-            },
+            headers=download_headers(name_of(pfad)),  # Content-Disposition, nosniff, no-store
         )
 
     @router.get("/zip")
@@ -338,11 +264,7 @@ def build_router(portal: Portal) -> APIRouter:
         return StreamingResponse(
             stream,
             media_type="application/zip",
-            headers={
-                "Content-Disposition": attachment(name_of(pfad) + ".zip"),
-                "X-Content-Type-Options": "nosniff",
-                "Cache-Control": "no-store",
-            },
+            headers=download_headers(name_of(pfad) + ".zip"),
             background=BackgroundTask(stream.aclose),
         )
 
@@ -568,7 +490,7 @@ def build_router(portal: Portal) -> APIRouter:
             await portal.adapters.bwsync.move(pfad, join(ziel, name_of(pfad)))  # Name bleibt, nie überschreiben
         except AdapterError as exc:
             text = problem_text(exc)
-            if exc.type == "bwsync-exists":
+            if exc.type == bwsync_errors.EXISTS:
                 text = f"In „{name_of(ziel) or ROOT_NAME}“ gibt es schon etwas mit dem Namen „{name_of(pfad)}“."
             return await move_page(user, pfad, art, ziel, errors={"verschieben": text}, status_code=page_status(exc))
         return back_to(ziel, "verschoben")

@@ -1,4 +1,3 @@
-import json
 import re
 from html import unescape
 
@@ -63,7 +62,7 @@ def links(html):
 
 
 def aenderungen(backend):
-    return [(c.method, c.url.path) for c in backend.calls if c.method != "GET"]
+    return [(method, path) for method, path, _ in backend.calls if method != "GET"]
 
 
 @pytest.fixture
@@ -83,18 +82,20 @@ def test_wurzel_zeigt_ordner_und_dateien(client, as_student, konto):
     assert "1,5 KB" in html and "16.11.2026" in html
     assert portal.url("/?pfad=Studium") in links(html)
     assert portal.url("/datei?pfad=zeta.txt") in links(html)
-    assert konto.calls[0].url.raw_path == b"/bwsync/folders/"
+    assert konto.calls[0][:2] == ("GET", "/bwsync/folders/")
 
 
-def test_jede_anfrage_mit_der_eigenen_anmeldung(client, konto):
+def test_jede_anfrage_mit_der_eigenen_anmeldung(client, konto, adapter_http):
+    konto.uninstall()  # hier der echte Weg des SDK (HTTP), damit die mitgeschickte Anmeldung sichtbar ist
     token = make_token(sub="andere-person")
     seite(client, {"X-Portal-Assertion": token, "Accept": "text/html"})
-    assert konto.calls[-1].headers["authorization"] == f"Bearer {token}"
+    assert adapter_http[-1].headers["authorization"] == f"Bearer {token}"
+    assert adapter_http[-1].url.raw_path == b"/bwsync/folders/"
 
 
 def test_navigieren_mit_brotkrumen(client, as_student, konto):
     html = seite(client, as_student, "Studium/Semester 5").text
-    assert konto.calls[-1].url.raw_path == b"/bwsync/folders/Studium/Semester%205"
+    assert konto.calls[-1][1] == "/bwsync/folders/Studium/Semester 5"
     nav = html[html.index('class="crumbs"') : html.index("</ol>", html.index('class="crumbs"'))]
     assert '<ol aria-label="Ordnerpfad">' in nav
     assert html.count("<nav") == html.count('aria-label="Hauptnavigation"')  # nur das Menü des Portals
@@ -208,7 +209,7 @@ def test_ordner_als_zip_herunterladen(client, as_student, konto):
     assert antwort.headers["cache-control"] == "no-store"
     with zipfile.ZipFile(io.BytesIO(antwort.content)) as archiv:
         assert archiv.read("Studium/plan.pdf") == b"pdf"
-    assert konto.calls[-1].url.raw_path == b"/bwsync/zip/Studium"
+    assert konto.calls[-1][1] == "/bwsync/zip/Studium"
 
 
 def test_zip_dateiname_ohne_anfuehrungszeichen(client, as_student, konto):
@@ -232,7 +233,7 @@ def test_zip_dateiname_ohne_anfuehrungszeichen(client, as_student, konto):
     ],
 )
 def test_attachment_kopf(name, erwartet):
-    from app.views import attachment
+    from platform_sdk.common.downloads import content_disposition as attachment
 
     assert attachment(name) == erwartet
 
@@ -255,8 +256,8 @@ def test_umbenennen_ausweichseite_ohne_zielordner(client, as_student, konto):
     antwort = senden(client, as_student, "/umbenennen", pfad="Studium/plan.pdf", art="datei", name="Plan 2026.pdf")
     assert antwort.status_code == 303 and antwort.headers["location"] == portal.url("/?pfad=Studium&ok=umbenannt")
     assert konto.files["Studium/Plan 2026.pdf"] == b"pdf" and "Studium/plan.pdf" not in konto.files
-    move = [c for c in konto.calls if c.url.path == "/bwsync/move"][0]
-    assert json.loads(move.content) == {"from": "Studium/plan.pdf", "to": "Studium/Plan 2026.pdf"}
+    move = [c for c in konto.calls if c[1] == "/bwsync/move"][0]
+    assert move[2] == {"from": "Studium/plan.pdf", "to": "Studium/Plan 2026.pdf"}
 
 
 def test_umbenennen_bleibt_im_selben_ordner(client, as_student, konto):
@@ -392,8 +393,8 @@ def test_verschieben_pfadleiste_fuehrt_zur_obersten_ebene(client, as_student, ko
     antwort = senden(client, as_student, "/verschieben", pfad="Studium/plan.pdf", art="datei", ziel="")
     assert antwort.status_code == 303 and antwort.headers["location"] == portal.url("/?ok=verschoben")
     assert konto.files["plan.pdf"] == b"pdf" and "Studium/plan.pdf" not in konto.files
-    move = [c for c in konto.calls if c.url.path == "/bwsync/move"][-1]
-    assert json.loads(move.content) == {"from": "Studium/plan.pdf", "to": "plan.pdf"}
+    move = [c for c in konto.calls if c[1] == "/bwsync/move"][-1]
+    assert move[2] == {"from": "Studium/plan.pdf", "to": "plan.pdf"}
 
 
 def test_verschieben_datei_und_ordner(client, as_student, konto):
@@ -403,8 +404,8 @@ def test_verschieben_datei_und_ordner(client, as_student, konto):
     antwort = senden(client, as_student, "/verschieben", pfad="Studium", art="ordner", ziel="Ärger")
     assert antwort.status_code == 303
     assert "Ärger/Studium/Semester 5" in konto.folders
-    move = [c for c in konto.calls if c.url.path == "/bwsync/move"][-1]
-    assert json.loads(move.content) == {"from": "Studium", "to": "Ärger/Studium"}
+    move = [c for c in konto.calls if c[1] == "/bwsync/move"][-1]
+    assert move[2] == {"from": "Studium", "to": "Ärger/Studium"}
     assert "Verschoben." in client.get(antwort.headers["location"], headers=as_student).text
 
 
