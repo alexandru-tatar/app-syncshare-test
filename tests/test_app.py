@@ -106,6 +106,7 @@ def test_formularfelder_ohne_sichtbares_label(client, as_student, konto):
     assert '<label for="name" class="visually-hidden">Name des Ordners</label>' in html
     assert '<label for="datei" class="visually-hidden">Datei</label>' in html
     assert "(Pflichtfeld)" not in html
+    assert '<caption class="visually-hidden">Inhalt von Mein bwSync&amp;Share</caption>' in html
     assert re.search(r'<input type="text" id="name"[^>]*placeholder="Neuer Ordner"[^>]*required>', html)
     assert re.search(r'<input type="file" id="datei"[^>]*required>', html)
 
