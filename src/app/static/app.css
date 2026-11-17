@@ -1,5 +1,10 @@
 /* Eigenes CSS der App. Nur Variablen des Portals (var(--…)), keine Farbwerte. Skill „design“. */
 
+/* Kopf der Seite: rechts „bwSync&Share-Konto trennen“ (unter dem Portal-„Abmelden“, nicht im Kopf) */
+.page-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: var(--s-2) var(--s-6); margin: 0 0 var(--s-4); }
+.page-head h1 { margin: 0; }
+
 /* Datei-Explorer */
 .crumbs ol { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: 0 0 var(--s-4); padding: 0; list-style: none; }
 .crumbs li + li::before { content: "/"; margin-right: var(--s-2); color: var(--ink-muted); }

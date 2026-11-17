@@ -1,4 +1,9 @@
-<h1>SyncShare</h1>
+<div class="page-head">
+  <h1>SyncShare</h1>
+  {% if not link_problem %}
+  <button type="button" class="btn btn--link" data-dialog-open="trennen-dialog">bwSync&amp;Share-Konto trennen</button>
+  {% endif %}
+</div>
 
 <p class="lead">Ihre Dateien aus bwSync&amp;Share.</p>
 
@@ -94,6 +99,24 @@
     <button type="submit" class="btn btn--primary">Hochladen</button>
   </form>
 </div>
+{% endif %}
+
+{% if not link_problem %}
+<p class="muted" id="trennen-status" role="status" aria-live="polite"></p>
+{# Bestätigung wie „Abmelden“ (kit.js öffnet den Dialog); app.js schickt nach „Konto trennen“ DELETE ans Gateway. #}
+<dialog id="trennen-dialog" aria-labelledby="trennen-titel" data-bwsync-disconnect data-url="{{ connect_url }}"
+  data-done-revoked="{{ disconnected_urls.revoked }}" data-done-kept="{{ disconnected_urls.kept }}"
+  data-done-open="{{ disconnected_urls.open }}">
+  <form method="dialog">
+    <h2 id="trennen-titel">bwSync&amp;Share-Konto trennen?</h2>
+    <p>SyncShare kann danach nicht mehr auf Ihre Dateien zugreifen. Ihre Dateien in bwSync&amp;Share bleiben erhalten.
+      Das App-Passwort, das SyncShare beim Verbinden angelegt hat, wird in bwSync&amp;Share widerrufen.</p>
+    <div class="dialog__actions">
+      <button value="cancel" class="btn btn--secondary" autofocus>Abbrechen</button>
+      <button value="confirm" class="btn btn--primary">Konto trennen</button>
+    </div>
+  </form>
+</dialog>
 {% endif %}
 
 <script src="{{ js_url }}" defer></script>

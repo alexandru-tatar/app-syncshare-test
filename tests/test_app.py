@@ -316,6 +316,45 @@ def test_skript_wird_ausgeliefert_und_nutzt_nur_gateway_routen(client, as_studen
     assert "appPassword" not in js and "localStorage" not in js
 
 
+def test_verbunden_zeigt_trennen_mit_bestaetigung(client, as_student, konto):
+    html = seite(client, as_student).text
+    kopf = html[html.index('class="page-head"') : html.index("</div>", html.index('class="page-head"'))]
+    assert "<h1>SyncShare</h1>" in kopf
+    assert re.search(
+        r'<button type="button" class="btn btn--link" data-dialog-open="trennen-dialog">'
+        r"bwSync&amp;Share-Konto trennen</button>",
+        kopf,
+    )
+    dialog = html[html.index('<dialog id="trennen-dialog"') : html.index("</dialog>", html.index("trennen-dialog"))]
+    assert 'data-bwsync-disconnect data-url="/connect/bwsync"' in dialog
+    assert f'data-done-revoked="{portal.url("/?ok=getrennt")}"' in dialog
+    assert f'data-done-kept="{portal.url("/?ok=getrennt-behalten")}"' in dialog
+    assert f'data-done-open="{portal.url("/?ok=getrennt-offen")}"' in dialog
+    assert '<button value="confirm" class="btn btn--primary">Konto trennen</button>' in dialog
+    assert "data-submit-form" not in dialog  # kein Formular: app.js schickt DELETE
+
+
+def test_ohne_konto_kein_trennen(client, as_student, konto):
+    konto.fail = (403, "bwsync-not-linked")
+    html = seite(client, as_student).text
+    assert "trennen-dialog" not in html and "Konto trennen" not in html
+
+
+@pytest.mark.parametrize(
+    "ok,text",
+    [
+        ("getrennt", "wurde in bwSync&amp;Share widerrufen"),
+        ("getrennt-behalten", "bleibt in bwSync&amp;Share bestehen"),
+        ("getrennt-offen", "ließ sich in bwSync&amp;Share nicht widerrufen"),
+    ],
+)
+def test_nach_dem_trennen_meldung(client, as_student, konto, ok, text):
+    konto.fail = (403, "bwsync-not-linked")
+    html = client.get(portal.url("/"), headers=as_student, params={"ok": ok}).text
+    assert "Ihr bwSync&amp;Share-Konto ist getrennt." in html and text in html
+    assert "bwSync&amp;Share verbinden" in html
+
+
 def test_nach_dem_verbinden_meldung(client, as_student, konto):
     html = client.get(portal.url("/"), headers=as_student, params={"ok": "verbunden"}).text
     assert "Ihr bwSync&amp;Share-Konto ist verbunden." in html

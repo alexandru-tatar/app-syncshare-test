@@ -99,4 +99,27 @@
       say(status, text);
     }
   }
+
+  // --- Trennen -----------------------------------------------------------------------------------------------
+  // kit.js öffnet den Dialog; nach „Konto trennen“ (returnValue "confirm") hier DELETE ans Gateway.
+  var dialog = document.querySelector("[data-bwsync-disconnect]");
+  if (dialog) {
+    dialog.addEventListener("close", async function () {
+      if (dialog.returnValue !== "confirm") return;
+      var status = document.getElementById("trennen-status");
+      say(status, "Das Konto wird getrennt …");
+      var result;
+      try {
+        result = await postJson(dialog.dataset.url, "DELETE");
+      } catch (e) {
+        result = { ok: false, status: 0, body: {} };
+      }
+      if (!result.ok) return say(status, problem(result));
+      // revoked: true widerrufen, null von Hand angelegt (bleibt), false nicht bestätigt
+      var revoked = result.body.revoked;
+      var next = revoked === true ? dialog.dataset.doneRevoked
+        : revoked === null ? dialog.dataset.doneKept : dialog.dataset.doneOpen;
+      window.location.assign(next);
+    });
+  }
 })();

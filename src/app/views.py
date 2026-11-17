@@ -66,6 +66,11 @@ DONE = {
     "umbenannt": "Umbenannt beziehungsweise verschoben.",
     "geloescht": "Gelöscht. Es liegt jetzt im Papierkorb von bwSync&Share.",
     "verbunden": "Ihr bwSync&Share-Konto ist verbunden.",
+    "getrennt": "Ihr bwSync&Share-Konto ist getrennt. Das App-Passwort von SyncShare wurde in bwSync&Share widerrufen.",
+    "getrennt-behalten": "Ihr bwSync&Share-Konto ist getrennt. Das App-Passwort wurde nicht von SyncShare angelegt "
+    "und bleibt in bwSync&Share bestehen; Sie können es dort unter Einstellungen → Sicherheit löschen.",
+    "getrennt-offen": "Ihr bwSync&Share-Konto ist getrennt. Das App-Passwort ließ sich in bwSync&Share nicht "
+    "widerrufen; bitte löschen Sie es dort unter Einstellungen → Sicherheit.",
 }
 KINDS = {"datei": "Datei", "ordner": "Ordner"}
 # Konto verbinden/trennen: Routen des Gateways (gleiche Herkunft), nicht der App; app.js ruft sie per fetch() auf.
@@ -220,6 +225,11 @@ def build_router(portal: Portal) -> APIRouter:
             link_invalid=PROBLEMS["bwsync-link-invalid"],
             connect_url=CONNECT_URL,
             connected_url=folder_url("", ok="verbunden"),
+            disconnected_urls={
+                "revoked": folder_url("", ok="getrennt"),
+                "kept": folder_url("", ok="getrennt-behalten"),
+                "open": folder_url("", ok="getrennt-offen"),
+            },
             js_url=portal.url("/static/app.js"),
             errors=errors,
             done=DONE.get(ok, "") if not errors else "",
