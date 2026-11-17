@@ -158,7 +158,6 @@ def page_status(exc: AdapterError) -> int:
 
 def build_router(portal: Portal) -> APIRouter:
     router = portal.router()
-    bwsync = portal.adapters.bwsync
 
     def link(route: str, **params: str) -> str:
         query = {key: value for key, value in params.items() if value}
@@ -200,7 +199,7 @@ def build_router(portal: Portal) -> APIRouter:
             status_code = 400
         else:
             try:
-                folder = await bwsync.list(path)
+                folder = await portal.adapters.bwsync.list(path)
             except AdapterError as exc:
                 if exc.type in LINK_PROBLEMS:
                     link_problem = exc.type
@@ -272,7 +271,7 @@ def build_router(portal: Portal) -> APIRouter:
         if not valid_path(pfad) or not valid_name(name):
             return await explorer(user, pfad, errors={"name": INVALID_NAME}, status_code=400, values={"name": name})
         try:
-            await bwsync.mkdir(join(pfad, name))
+            await portal.adapters.bwsync.mkdir(join(pfad, name))
         except AdapterError as exc:
             if exc.type in LINK_PROBLEMS:
                 return await explorer(user, pfad, status_code=page_status(exc))
@@ -299,7 +298,7 @@ def build_router(portal: Portal) -> APIRouter:
             msg = f"Die Datei ist größer als {MAX_BYTES // (1024 * 1024)} MB. Bitte wählen Sie eine kleinere Datei."
             return await explorer(user, pfad, errors={"datei": msg}, status_code=400)
         try:
-            await bwsync.upload(join(pfad, name), data)
+            await portal.adapters.bwsync.upload(join(pfad, name), data)
         except AdapterError as exc:
             return await explorer(user, pfad, errors={"datei": problem_text(exc)}, status_code=page_status(exc))
         return back_to(pfad, "hochgeladen")
@@ -309,7 +308,7 @@ def build_router(portal: Portal) -> APIRouter:
         if not valid_path(pfad, root=False):
             return await explorer(user, "", errors={"liste": INVALID_PATH}, status_code=400)
         try:
-            data = await bwsync.download(pfad, max_bytes=MAX_BYTES)
+            data = await portal.adapters.bwsync.download(pfad, max_bytes=MAX_BYTES)
         except AdapterError as exc:
             msg = "Die Datei konnte nicht heruntergeladen werden. " + problem_text(exc)
             if exc.status == 413:
@@ -332,7 +331,7 @@ def build_router(portal: Portal) -> APIRouter:
         if not valid_path(pfad, root=False):
             return await explorer(user, "", errors={"liste": INVALID_PATH}, status_code=400)
         try:
-            stream = await bwsync.download_zip(pfad)
+            stream = await portal.adapters.bwsync.download_zip(pfad)
         except AdapterError as exc:
             msg = "Der Ordner konnte nicht heruntergeladen werden. " + problem_text(exc)
             return await explorer(user, parent_of(pfad), errors={"liste": msg}, status_code=page_status(exc))
@@ -355,7 +354,7 @@ def build_router(portal: Portal) -> APIRouter:
     async def folder_content(pfad: str) -> str | None:
         """Was direkt im Ordner liegt, als Satz; None, wenn die Liste gerade nicht zu holen ist."""
         try:
-            listing = await bwsync.list(pfad)
+            listing = await portal.adapters.bwsync.list(pfad)
         except AdapterError:
             return None
         files = sum(1 for e in listing.entries if e.type != "folder")
@@ -401,7 +400,7 @@ def build_router(portal: Portal) -> APIRouter:
         if not target_ok(pfad, art):
             return await explorer(user, "", errors={"liste": INVALID_PATH}, status_code=400)
         try:
-            await bwsync.delete(pfad, folder=art == "ordner")
+            await portal.adapters.bwsync.delete(pfad, folder=art == "ordner")
         except AdapterError as exc:
             return await delete_page(
                 user, pfad, art, errors={"loeschen": problem_text(exc)}, status_code=page_status(exc)
@@ -472,7 +471,7 @@ def build_router(portal: Portal) -> APIRouter:
             )
         folder = parent_of(pfad)  # immer derselbe Elternordner
         try:
-            await bwsync.move(pfad, join(folder, name))
+            await portal.adapters.bwsync.move(pfad, join(folder, name))
         except AdapterError as exc:
             text, status_code = problem_text(exc), page_status(exc)
             return failed(text, status_code) or await rename_page(
@@ -501,7 +500,7 @@ def build_router(portal: Portal) -> APIRouter:
         errors = dict(errors or {})
         folders, listed = [], False
         try:
-            listing = await bwsync.list(ziel)
+            listing = await portal.adapters.bwsync.list(ziel)
             listed = True
             for entry in listing.entries:
                 sub = join(ziel, entry.name)
@@ -566,7 +565,7 @@ def build_router(portal: Portal) -> APIRouter:
         if blocker:
             return await move_page(user, pfad, art, ziel, errors={"verschieben": blocker}, status_code=400)
         try:
-            await bwsync.move(pfad, join(ziel, name_of(pfad)))  # Name bleibt, nie überschreiben
+            await portal.adapters.bwsync.move(pfad, join(ziel, name_of(pfad)))  # Name bleibt, nie überschreiben
         except AdapterError as exc:
             text = problem_text(exc)
             if exc.type == "bwsync-exists":
