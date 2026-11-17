@@ -1,83 +1,46 @@
-// SyncShare: bwSync&Share-Konto verbinden (Nextcloud Login Flow v2) und trennen.
-// Spricht nur mit dem Gateway (/connect/bwsync…, gleiche Herkunft). App-Passwort und Poll-Token bleiben im
-// Adapter; diese Seite sieht nur login_url (Anmeldeseite von bwSync&Share) und den Zustand.
+// SyncShare: bwSync&Share-Konto verbinden und trennen (Ablauf: window.PortalBwSync aus dem Portal-SDK,
+// /_sdk/bwsync/connect.js) und Umbenennen in der Tabelle. Texte und Knöpfe gehören der App.
 (function () {
   "use strict";
 
-  var POLL_MS = 3000;
+  var sdk = window.PortalBwSync;
   var WAITING = "Bitte melden Sie sich im neuen Tab bei bwSync&Share an und erlauben Sie den Zugriff. " +
     "Diese Seite wartet darauf und zeigt danach Ihre Dateien.";
+  var UNAVAILABLE = "bwSync&Share ist gerade nicht erreichbar. Bitte versuchen Sie es später erneut.";
+  // Text nach type (Tabellen in platform_sdk/adapters/bwsync/README.md), nie nach dem Text des Servers
+  var TEXTS = {
+    "connect-popup-blocked": "Der neue Tab wurde blockiert. Bitte erlauben Sie Pop-ups für diese Seite.",
+    "connect-expired": "Die Anmeldung ist abgelaufen. Bitte verbinden Sie erneut.",
+    "connect-aborted": "Die Anmeldung wurde abgebrochen oder ist abgelaufen. Bitte verbinden Sie erneut.",
+    "portal-session-expired": "Ihre Anmeldung am Portal ist abgelaufen. Bitte laden Sie die Seite neu.",
+    "bwsync-forbidden": "Dafür fehlt Ihnen in bwSync&Share die Berechtigung.",
+  };
 
   function say(el, text) {
     if (el) el.textContent = text;
   }
 
-  async function postJson(url, method) {
-    var response = await fetch(url, {
-      method: method || "POST",
-      credentials: "same-origin",
-      headers: { Accept: "application/json" },
-    });
-    var body = {};
-    try {
-      body = await response.json();
-    } catch (e) {
-      body = {};
-    }
-    return { ok: response.ok, status: response.status, body: body };
-  }
-
-  function problem(result) {
-    if (result.status === 401) return "Ihre Anmeldung am Portal ist abgelaufen. Bitte laden Sie die Seite neu.";
-    if (typeof result.body.detail === "string" && result.body.type) return result.body.detail;
-    return "bwSync&Share ist gerade nicht erreichbar. Bitte versuchen Sie es später erneut.";
+  function problem(error) {
+    return (error && TEXTS[error.type]) || UNAVAILABLE;
   }
 
   // --- Verbinden ---------------------------------------------------------------------------------------------
   var connect = document.querySelector("[data-bwsync-connect]");
-  if (connect) {
+  if (connect && sdk) {
     var status = document.getElementById("verbinden-status");
     var waiting = false;
 
-    connect.addEventListener("click", async function () {
+    connect.addEventListener("click", function () {
       if (waiting) return;
       waiting = true;
       // Sofort: Button aus, der einzige Hinweis da. Er ändert sich danach nicht mehr, nur ein Fehler ersetzt ihn.
       connect.disabled = true;
-      say(status, WAITING);
-      // Tab sofort im Klick öffnen (sonst greift der Popup-Blocker), Adresse folgt nach dem Start.
-      var tab = window.open("", "_blank");
-      if (!tab) return stop("Der neue Tab wurde blockiert. Bitte erlauben Sie Pop-ups für diese Seite.");
-      tab.opener = null; // die Anmeldeseite bekommt keinen Zugriff auf diese Seite
-      var started;
-      try {
-        started = await postJson(connect.dataset.startUrl);
-      } catch (e) {
-        started = { ok: false, status: 0, body: {} };
-      }
-      if (!started.ok || typeof started.body.login_url !== "string" || started.body.login_url.indexOf("https://") !== 0) {
-        tab.close();
-        return stop(problem(started));
-      }
-      tab.location.href = started.body.login_url;
-      var until = Date.now() + 1000 * (Number(started.body.expires_in) || 1200);
-      poll(until);
+      sdk.connect(function (state) {
+        if (state.state === "waiting") return say(status, WAITING);
+        if (state.state === "linked") return window.location.assign(connect.dataset.doneUrl);
+        stop(problem(state));
+      });
     });
-
-    async function poll(until) {
-      if (Date.now() > until) return stop("Die Anmeldung ist abgelaufen. Bitte verbinden Sie erneut.");
-      await new Promise(function (resolve) { setTimeout(resolve, POLL_MS); });
-      var result;
-      try {
-        result = await postJson(connect.dataset.pollUrl);
-      } catch (e) {
-        return poll(until); // kurz nicht erreichbar: weiter warten
-      }
-      if (!result.ok) return stop(problem(result));
-      if (result.body.state === "linked") return window.location.assign(connect.dataset.doneUrl);
-      if (result.body.state === "pending") return poll(until);
-      stop("Die Anmeldung wurde abgebrochen oder ist abgelaufen. Bitte verbinden Sie erneut.");
-    }
 
     function stop(text) {
       waiting = false;
@@ -87,24 +50,22 @@
   }
 
   // --- Trennen -----------------------------------------------------------------------------------------------
-  // kit.js öffnet den Dialog; nach „Konto trennen“ (returnValue "confirm") hier DELETE ans Gateway.
+  // kit.js öffnet den Dialog; nach „Konto trennen“ (returnValue "confirm") trennt das SDK-Skript.
   var dialog = document.querySelector("[data-bwsync-disconnect]");
-  if (dialog) {
+  if (dialog && sdk) {
     dialog.addEventListener("close", async function () {
       if (dialog.returnValue !== "confirm") return;
       var status = document.getElementById("trennen-status");
       say(status, "Das Konto wird getrennt …");
       var result;
       try {
-        result = await postJson(dialog.dataset.url, "DELETE");
-      } catch (e) {
-        result = { ok: false, status: 0, body: {} };
+        result = await sdk.disconnect();
+      } catch (error) {
+        return say(status, problem(error));
       }
-      if (!result.ok) return say(status, problem(result));
       // revoked: true widerrufen, null von Hand angelegt (bleibt), false nicht bestätigt
-      var revoked = result.body.revoked;
-      var next = revoked === true ? dialog.dataset.doneRevoked
-        : revoked === null ? dialog.dataset.doneKept : dialog.dataset.doneOpen;
+      var next = result.revoked === true ? dialog.dataset.doneRevoked
+        : result.revoked === null ? dialog.dataset.doneKept : dialog.dataset.doneOpen;
       window.location.assign(next);
     });
   }

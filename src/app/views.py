@@ -77,8 +77,6 @@ DONE = {
     "widerrufen; bitte löschen Sie es dort unter Einstellungen → Sicherheit.",
 }
 KINDS = {"datei": "Datei", "ordner": "Ordner"}
-# Konto verbinden/trennen: Routen des Gateways (gleiche Herkunft), nicht der App; app.js ruft sie per fetch() auf.
-CONNECT_URL = connect.ROUTES["status"]
 
 
 def problem_text(exc: AdapterError) -> str:
@@ -170,7 +168,7 @@ def build_router(portal: Portal) -> APIRouter:
             root_url=folder_url(""),
             link_problem=link_problem,
             link_invalid=PROBLEMS[bwsync_errors.LINK_INVALID],
-            connect_url=CONNECT_URL,
+            connect_js_url=portal.url(connect.SCRIPT),  # Ablauf aus dem SDK; Knopf und Texte macht die App
             connected_url=folder_url("", ok="verbunden"),
             disconnected_urls={
                 "revoked": folder_url("", ok="getrennt"),

@@ -11,8 +11,8 @@
 {# Ohne verbundenes Konto: nur Überschrift, kurzer Hinweis und Verbinden. #}
 <p id="verbindung">{% if link_problem == "bwsync-link-invalid" %}{{ link_invalid }}{% else %}Verbinden Sie Ihr bwSync&amp;Share-Konto, um Ihre Dateien hier zu sehen.{% endif %}</p>
 <p>
-  <button type="button" class="btn btn--primary" data-bwsync-connect data-start-url="{{ connect_url }}/start"
-    data-poll-url="{{ connect_url }}/poll" data-done-url="{{ connected_url }}">bwSync&amp;Share verbinden</button>
+  <button type="button" class="btn btn--primary" data-bwsync-connect
+    data-done-url="{{ connected_url }}">bwSync&amp;Share verbinden</button>
 </p>
 <p class="muted" id="verbinden-status" role="status" aria-live="polite"></p>
 <noscript><p>Zum Verbinden braucht diese Seite JavaScript.</p></noscript>
@@ -100,8 +100,8 @@
 
 {% if not link_problem %}
 <p class="muted" id="trennen-status" role="status" aria-live="polite"></p>
-{# Bestätigung wie „Abmelden“ (kit.js öffnet den Dialog); app.js schickt nach „Konto trennen“ DELETE ans Gateway. #}
-<dialog id="trennen-dialog" aria-labelledby="trennen-titel" data-bwsync-disconnect data-url="{{ connect_url }}"
+{# Bestätigung wie „Abmelden“ (kit.js öffnet den Dialog); nach „Konto trennen“ trennt connect.js aus dem SDK. #}
+<dialog id="trennen-dialog" aria-labelledby="trennen-titel" data-bwsync-disconnect
   data-done-revoked="{{ disconnected_urls.revoked }}" data-done-kept="{{ disconnected_urls.kept }}"
   data-done-open="{{ disconnected_urls.open }}">
   <form method="dialog">
@@ -116,4 +116,5 @@
 </dialog>
 {% endif %}
 
+<script src="{{ connect_js_url }}" defer></script>
 <script src="{{ js_url }}" defer></script>

@@ -524,11 +524,12 @@ def test_nicht_verbunden_bietet_verbinden_an(client, as_student, konto):
     html = seite(client, as_student).text
     button = re.search(r"<button[^>]*data-bwsync-connect[^>]*>bwSync&amp;Share verbinden</button>", html, re.S)
     assert button
-    assert 'data-start-url="/connect/bwsync/start"' in button.group(0)
-    assert 'data-poll-url="/connect/bwsync/poll"' in button.group(0)
+    assert "/connect/bwsync" not in html  # die Routen kennt connect.js aus dem SDK
     assert f'data-done-url="{portal.url("/?ok=verbunden")}"' in button.group(0)
     assert 'id="verbinden-status" role="status"' in html
-    assert f'<script src="{portal.url("/static/app.js")}" defer></script>' in html
+    sdk = f'<script src="{portal.url("/_sdk/bwsync/connect.js")}" defer></script>'
+    app = f'<script src="{portal.url("/static/app.js")}" defer></script>'
+    assert sdk in html and app in html and html.index(sdk) < html.index(app)
     assert "<script>" not in html  # kein Inline-Skript (CSP der Apps)
 
 
@@ -536,8 +537,13 @@ def test_skript_wird_ausgeliefert_und_nutzt_nur_gateway_routen(client, as_studen
     antwort = client.get(portal.url("/static/app.js"), headers=as_student)
     assert antwort.status_code == 200 and "javascript" in antwort.headers["content-type"]
     js = antwort.text
-    assert "tab.opener = null" in js and 'credentials: "same-origin"' in js
+    verbinden = js[: js.index("// --- Umbenennen")]
+    assert "window.PortalBwSync" in js and "fetch(" not in verbinden  # Verbinden/Trennen nur über das SDK-Skript
     assert "appPassword" not in js and "localStorage" not in js
+    sdk = client.get(portal.url("/_sdk/bwsync/connect.js"), headers=as_student)
+    assert sdk.status_code == 200 and "javascript" in sdk.headers["content-type"]
+    assert "tab.opener = null" in sdk.text and 'credentials: "same-origin"' in sdk.text
+    assert client.get(portal.url("/_sdk/bwsync/connect.js")).status_code == 401
 
 
 def test_verbunden_zeigt_trennen_mit_bestaetigung(client, as_student, konto):
@@ -550,12 +556,12 @@ def test_verbunden_zeigt_trennen_mit_bestaetigung(client, as_student, konto):
         kopf,
     )
     dialog = html[html.index('<dialog id="trennen-dialog"') : html.index("</dialog>", html.index("trennen-dialog"))]
-    assert 'data-bwsync-disconnect data-url="/connect/bwsync"' in dialog
+    assert "data-bwsync-disconnect" in dialog and "/connect/bwsync" not in dialog
     assert f'data-done-revoked="{portal.url("/?ok=getrennt")}"' in dialog
     assert f'data-done-kept="{portal.url("/?ok=getrennt-behalten")}"' in dialog
     assert f'data-done-open="{portal.url("/?ok=getrennt-offen")}"' in dialog
     assert '<button value="confirm" class="btn btn--primary">Konto trennen</button>' in dialog
-    assert "data-submit-form" not in dialog  # kein Formular: app.js schickt DELETE
+    assert "data-submit-form" not in dialog  # kein Formular: connect.js aus dem SDK trennt
 
 
 def test_kopf_nur_ueberschrift_pfadleiste_tabelle(client, as_student, konto):
@@ -578,7 +584,11 @@ def test_trennen_dialog_text(client, as_student, konto):
 def test_verbinden_zeigt_hinweis_vor_der_serverantwort(client, as_student):
     js = client.get(portal.url("/static/app.js"), headers=as_student).text
     klick = js[js.index('connect.addEventListener("click"') :]
-    assert klick.index("connect.disabled = true") < klick.index("say(status, WAITING)") < klick.index("await postJson")
+    # Button sofort aus; den Hinweis zeigt der Zustand "waiting", den connect.js vor der ersten Serveranfrage meldet
+    assert klick.index("connect.disabled = true") < klick.index("sdk.connect(") < klick.index("say(status, WAITING)")
+    sdk = client.get(portal.url("/_sdk/bwsync/connect.js"), headers=as_student).text
+    ablauf = sdk[sdk.index("function connect(") :]
+    assert ablauf.index('onState({ state: "waiting" })') < ablauf.index("await call(")
     # Nur ein Text beim Verbinden; andere Texte im Verbinden-Teil nur über stop() (Fehler, Button wieder aktiv)
     verbinden = js[js.index("// --- Verbinden") : js.index("// --- Trennen")]
     assert verbinden.count("say(") == 2  # WAITING beim Klick, Fehlertext in stop()
