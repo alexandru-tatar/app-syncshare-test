@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from ..errors import AdapterError
 from .models import Folder, GradeList
-from .transport import Transport
+from .transport import AdapterStream, Transport
 
 CONTRACT_VIOLATION = "Das System hat unerwartete Daten geliefert. Bitte versuchen Sie es später noch einmal."
 
@@ -18,7 +18,7 @@ class BwSyncClient:
 
     Pfade sind relativ zur Wurzel des Kontos, z. B. ``"Studium/Notizen.pdf"``; ``""`` ist die Wurzel
     (nur bei :meth:`list`). Fehler kommen als :class:`AdapterError`; ``type`` nennt den Fall, z. B.
-    ``bwsync-not-linked``, ``bwsync-exists``, ``bwsync-parent-missing``, ``bwsync-folder-not-empty``.
+    ``bwsync-not-linked``, ``bwsync-link-invalid``, ``bwsync-exists``, ``bwsync-parent-missing``, ``bwsync-forbidden``.
     """
 
     def __init__(self, transport: Transport) -> None:
@@ -49,6 +49,18 @@ class BwSyncClient:
     async def download(self, path: str, *, max_bytes: int = 10_000_000) -> bytes:
         return await self._t.get_bytes(self._path(path), max_bytes=max_bytes)
 
+    async def download_zip(self, path: str) -> AdapterStream:
+        """Ordner als ZIP, gestreamt (Scope ``bwsync:read``); nicht die Wurzel (``""``).
+
+        Beispiel::
+
+            stream = await bwsync.download_zip("Studium")   # Fehler hier, bevor geantwortet wird
+            return StreamingResponse(stream, media_type="application/zip",
+                                     headers={"Content-Disposition": 'attachment; filename="Studium.zip"'},
+                                     background=BackgroundTask(stream.aclose))
+        """
+        return await self._t.open_stream("/bwsync/zip/" + quote(self._rel(path), safe="/"))
+
     async def list(self, path: str = "") -> Folder:
         """Direkte Einträge eines Ordners (Scope ``bwsync:read``)."""
         data = await self._t.get(self._folder(path, root=True), None)
@@ -66,9 +78,9 @@ class BwSyncClient:
         await self._t.send("POST", "/bwsync/move", {"from": self._rel(source), "to": self._rel(target)})
 
     async def delete(self, path: str, *, folder: bool = False) -> None:
-        """Datei löschen, mit ``folder=True`` einen leeren Ordner (Scope ``bwsync:delete``).
+        """Datei löschen, mit ``folder=True`` einen Ordner samt Inhalt (Scope ``bwsync:delete``).
 
-        Ordner mit Inhalt → ``bwsync-folder-not-empty``; Gelöschtes landet im Papierkorb von bwSync&Share.
+        Nie die Wurzel. Gelöschtes landet im Papierkorb von bwSync&Share.
         """
         await self._t.send("DELETE", self._folder(path) if folder else self._path(path))
 

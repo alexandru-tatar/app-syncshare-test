@@ -180,6 +180,7 @@ def adapter_backend(monkeypatch):
         SimpleNamespace(
             AsyncClient=factory,
             TimeoutException=httpx.TimeoutException,
+            Timeout=httpx.Timeout,
             HTTPError=httpx.HTTPError,
         ),
     )
