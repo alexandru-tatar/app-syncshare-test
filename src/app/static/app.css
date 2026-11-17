@@ -11,3 +11,8 @@
 .crumbs [aria-current="page"] { font-weight: 700; }
 .explorer-forms { display: flex; flex-wrap: wrap; gap: var(--s-8); margin-top: var(--s-8); }
 .explorer-forms form { flex: 1 1 18rem; }
+
+/* Umbenennen direkt in der Tabelle */
+.rename-input { width: 100%; min-width: 12rem; padding: var(--s-1) var(--s-2); border: 1px solid var(--border-ui);
+  border-radius: var(--radius); background: var(--bg); color: var(--ink); font: inherit; }
+.rename-error { font-size: .9375rem; }

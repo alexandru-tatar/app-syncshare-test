@@ -1,4 +1,4 @@
-<h1>{{ kind }} umbenennen oder verschieben</h1>
+<h1>{{ kind }} umbenennen</h1>
 
 {% include "_meldungen.html" %}
 
@@ -9,14 +9,9 @@
   <input type="hidden" name="art" value="{{ art }}">
   <div class="field">
     <label for="name">Neuer Name <span class="field__required">(Pflichtfeld)</span></label>
-    <input type="text" id="name" name="name" value="{{ name }}" maxlength="255" required>
+    <p class="field__hint" id="name-hinweis">Bleibt im selben Ordner. Vorhandenes wird nie überschrieben.</p>
+    <input type="text" id="name" name="name" value="{{ name }}" maxlength="255" aria-describedby="name-hinweis" required>
     {% if errors.name %}<p class="field__error">{{ errors.name }}</p>{% endif %}
-  </div>
-  <div class="field">
-    <label for="ziel">Ordner</label>
-    <p class="field__hint" id="ziel-hinweis">Pfad des Ordners, in dem es danach liegt, zum Beispiel „Studium/Semester 5“. Leer: oberste Ebene. Der Ordner muss schon existieren; Vorhandenes wird nie überschrieben.</p>
-    <input type="text" id="ziel" name="ziel" value="{{ ziel }}" maxlength="1024" aria-describedby="ziel-hinweis">
-    {% if errors.ziel %}<p class="field__error">{{ errors.ziel }}</p>{% endif %}
   </div>
   <div class="actions">
     <button type="submit" class="btn btn--primary">Speichern</button>

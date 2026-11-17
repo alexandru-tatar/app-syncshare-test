@@ -108,4 +108,96 @@
       window.location.assign(next);
     });
   }
+
+  // --- Umbenennen direkt in der Tabelle ------------------------------------------------------------------------
+  // Klick auf „Umbenennen“: Name wird zum Eingabefeld (bei Dateien ist nur der Teil vor der Endung markiert).
+  // Enter oder Fokus weg = speichern, Esc = abbrechen. Fehler stehen an der Zeile, der Name bleibt der alte.
+  // Ohne JavaScript führt der Link auf die Ausweichseite /umbenennen.
+  var table = document.querySelector("[data-rename-url]");
+  if (table) {
+    table.addEventListener("click", function (e) {
+      var trigger = e.target.closest && e.target.closest("[data-rename]");
+      if (!trigger) return;
+      e.preventDefault();
+      startRename(trigger.closest("tr"), trigger);
+    });
+  }
+
+  function startRename(row, trigger) {
+    var cell = row && row.querySelector("[data-name-cell]");
+    if (!cell || cell.querySelector(".rename-input")) return;
+    var oldName = row.dataset.name;
+    var oldError = row.querySelector(".rename-error");
+    if (oldError) oldError.remove();
+    var original = Array.prototype.slice.call(cell.childNodes);
+    var input = document.createElement("input");
+    input.type = "text";
+    input.className = "rename-input";
+    input.value = oldName;
+    input.maxLength = 255;
+    input.setAttribute("aria-label", "Neuer Name für " + oldName);
+    cell.replaceChildren(input);
+    input.focus();
+    var dot = oldName.lastIndexOf(".");
+    if (row.dataset.art === "datei" && dot > 0) input.setSelectionRange(0, dot);
+    else input.select();
+    var finished = false;
+
+    function restore() {
+      cell.replaceChildren.apply(cell, original);
+    }
+
+    function cancel() {
+      if (finished) return;
+      finished = true;
+      restore();
+      trigger.focus();
+    }
+
+    async function save() {
+      if (finished) return;
+      finished = true;
+      var name = input.value.trim();
+      if (!name || name === oldName) return restore();
+      input.readOnly = true;
+      var form = new FormData();
+      form.append("pfad", row.dataset.pfad);
+      form.append("art", row.dataset.art);
+      form.append("name", name);
+      var body = {};
+      var ok = false;
+      try {
+        var response = await fetch(table.dataset.renameUrl, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+          body: form,
+        });
+        ok = response.ok;
+        body = await response.json();
+      } catch (e) {
+        body = body || {};
+      }
+      if (ok && typeof body.url === "string") return window.location.assign(body.url);
+      restore();
+      var error = document.createElement("p");
+      error.className = "field__error rename-error";
+      error.setAttribute("role", "alert");
+      error.textContent = typeof body.error === "string" ? body.error
+        : "Das Umbenennen hat nicht geklappt. Bitte versuchen Sie es erneut.";
+      cell.appendChild(error);
+      trigger.focus();
+    }
+
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        save();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        cancel();
+      }
+    });
+    input.addEventListener("blur", save);
+  }
 })();

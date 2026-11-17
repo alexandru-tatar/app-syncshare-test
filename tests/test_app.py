@@ -188,55 +188,97 @@ def test_ohne_datei_deutsche_meldung_statt_422(client, as_student, konto):
     assert "Bitte wählen Sie eine Datei aus." in antwort.text
 
 
-def test_umbenennen(client, as_student, konto):
+def test_umbenennen_ausweichseite_ohne_zielordner(client, as_student, konto):
     formular = client.get(
         portal.url("/umbenennen"), headers=as_student, params={"pfad": "Studium/plan.pdf", "art": "datei"}
     )
-    assert formular.status_code == 200 and 'value="plan.pdf"' in formular.text and 'value="Studium"' in formular.text
+    assert formular.status_code == 200 and 'value="plan.pdf"' in formular.text
+    assert 'name="ziel"' not in formular.text and "verschieben" not in formular.text.lower()
     assert aenderungen(konto) == []
-    antwort = senden(
-        client, as_student, "/umbenennen", pfad="Studium/plan.pdf", art="datei", name="Plan 2026.pdf", ziel="Studium"
-    )
+    antwort = senden(client, as_student, "/umbenennen", pfad="Studium/plan.pdf", art="datei", name="Plan 2026.pdf")
     assert antwort.status_code == 303 and antwort.headers["location"] == portal.url("/?pfad=Studium&ok=umbenannt")
     assert konto.files["Studium/Plan 2026.pdf"] == b"pdf" and "Studium/plan.pdf" not in konto.files
     move = [c for c in konto.calls if c.url.path == "/bwsync/move"][0]
     assert json.loads(move.content) == {"from": "Studium/plan.pdf", "to": "Studium/Plan 2026.pdf"}
 
 
-def test_ordner_verschieben(client, as_student, konto):
-    antwort = senden(client, as_student, "/umbenennen", pfad="Studium", art="ordner", name="Studium", ziel="Ärger")
-    assert antwort.status_code == 303
-    assert "Ärger/Studium/Semester 5" in konto.folders and "Ärger/Studium/plan.pdf" in konto.files
+def test_umbenennen_bleibt_im_selben_ordner(client, as_student, konto):
+    # Ein altes Formular mit Zielordner verschiebt nicht: ziel wird ignoriert, der Elternordner bleibt.
+    antwort = senden(client, as_student, "/umbenennen", pfad="Studium", art="ordner", name="Kurse", ziel="Ärger")
+    assert antwort.status_code == 303 and antwort.headers["location"] == portal.url("/?ok=umbenannt")
+    assert "Kurse/Semester 5" in konto.folders and "Kurse/plan.pdf" in konto.files
+    assert not any(p.startswith("Ärger/") for p in konto.folders | set(konto.files))
+
+
+def json_umbenennen(client, headers, **form):
+    return client.post(
+        portal.url("/umbenennen"), headers={**headers, "Accept": "application/json"}, data=form, follow_redirects=False
+    )
+
+
+def test_umbenennen_in_der_tabelle_antwortet_json(client, as_student, konto):
+    antwort = json_umbenennen(client, as_student, pfad="zeta.txt", art="datei", name="omega.txt")
+    assert antwort.status_code == 200 and antwort.json() == {"url": portal.url("/?ok=umbenannt")}
+    assert antwort.headers["cache-control"] == "no-store"
+    assert "omega.txt" in konto.files and "zeta.txt" not in konto.files
+    html = client.get(antwort.json()["url"], headers=as_student).text
+    assert "Umbenannt." in html
+
+
+@pytest.mark.parametrize(
+    "form,status,text",
+    [
+        ({"pfad": "Studium/plan.pdf", "art": "datei", "name": "plan.pdf"}, 400, "neuen Namen"),
+        ({"pfad": "zeta.txt", "art": "datei", "name": "Studium/zeta.txt"}, 400, "kein „/“"),
+        ({"pfad": "zeta.txt", "art": "datei", "name": "a:b"}, 400, "höchstens 255 Zeichen"),
+        ({"pfad": "zeta.txt", "art": "datei", "name": "Studium"}, 409, "gibt es schon"),
+        ({"pfad": "../zeta.txt", "art": "datei", "name": "x"}, 400, "nicht öffnen"),
+    ],
+)
+def test_umbenennen_in_der_tabelle_fehler_als_json(client, as_student, konto, form, status, text):
+    vorher = (set(konto.files), set(konto.folders))
+    antwort = json_umbenennen(client, as_student, **form)
+    assert antwort.status_code == status and text in antwort.json()["error"]
+    assert (set(konto.files), set(konto.folders)) == vorher  # Name bleibt der alte
+
+
+def test_umbenennen_gesperrte_datei(client, as_student, konto):
+    konto.fail = (423, None)
+    antwort = json_umbenennen(client, as_student, pfad="zeta.txt", art="datei", name="omega.txt")
+    assert antwort.status_code == 423 and "gesperrt" in antwort.json()["error"]
 
 
 @pytest.mark.parametrize(
     "form,text",
     [
-        ({"name": "zeta.txt", "ziel": ""}, "gibt es schon"),
-        ({"name": "x.pdf", "ziel": "Fehlt"}, "Den Zielordner gibt es nicht."),
+        ({"name": "plan.pdf"}, "neuen Namen"),
+        ({"name": "a/b"}, "kein „/“"),
+        ({"name": "zeta.txt"}, None),  # gibt es im Ordner Studium nicht: erlaubt
     ],
 )
-def test_umbenennen_fehler_vom_adapter(client, as_student, konto, form, text):
+def test_umbenennen_ausweichseite_fehler_am_feld(client, as_student, konto, form, text):
     antwort = senden(client, as_student, "/umbenennen", pfad="Studium/plan.pdf", art="datei", **form)
-    assert antwort.status_code == 409 and text in antwort.text
-    assert konto.files["Studium/plan.pdf"] == b"pdf"
-    feld = "ziel" if form["ziel"] else "name"
-    assert re.search(rf'<li><a href="#{feld}">[^<]*{text}', fehlerkasten(antwort.text))  # mit Feld: Link ins Feld
-
-
-@pytest.mark.parametrize(
-    "form,text",
-    [
-        ({"pfad": "Studium/plan.pdf", "art": "datei", "name": "plan.pdf", "ziel": "Studium"}, "neuen Namen"),
-        ({"pfad": "Studium", "art": "ordner", "name": "Studium", "ziel": "Studium/Semester 5"}, "nicht in sich selbst"),
-        ({"pfad": "zeta.txt", "art": "datei", "name": "a/b", "ziel": ""}, "höchstens 255 Zeichen"),
-        ({"pfad": "zeta.txt", "art": "datei", "name": "neu", "ziel": "../x"}, "zum Beispiel Studium/Semester 5"),
-    ],
-)
-def test_umbenennen_wird_vorher_geprueft(client, as_student, konto, form, text):
-    antwort = senden(client, as_student, "/umbenennen", **form)
+    if text is None:
+        assert antwort.status_code == 303
+        return
     assert antwort.status_code == 400 and text in antwort.text
-    assert aenderungen(konto) == []
+    assert re.search(r'<li><a href="#name">', fehlerkasten(antwort.text))
+
+
+def test_tabelle_hat_daten_fuer_umbenennen(client, as_student, konto):
+    html = seite(client, as_student, "Studium").text
+    assert f'<table class="table" data-rename-url="{portal.url("/umbenennen")}">' in html
+    assert '<tr data-pfad="Studium/plan.pdf" data-art="datei" data-name="plan.pdf">' in html
+    assert '<th scope="row" data-name-cell>plan.pdf</th>' in html
+    assert re.search(r'<a href="[^"]*/umbenennen\?pfad=Studium%2Fplan.pdf&amp;art=datei" data-rename>Umbenennen', html)
+
+
+def test_skript_umbenennen_markiert_name_ohne_endung(client, as_student):
+    js = client.get(portal.url("/static/app.js"), headers=as_student).text
+    teil = js[js.index("// --- Umbenennen") :]
+    assert 'lastIndexOf(".")' in teil and "setSelectionRange(0, dot)" in teil
+    assert '"Enter"' in teil and '"Escape"' in teil and 'addEventListener("blur", save)' in teil
+    assert 'Accept: "application/json"' in teil and "textContent" in teil and "innerHTML" not in js
 
 
 def test_loeschen_fragt_erst_nach(client, as_student, konto):
@@ -337,7 +379,7 @@ def test_verbunden_zeigt_trennen_mit_bestaetigung(client, as_student, konto):
 
 def test_kopf_nur_ueberschrift_pfadleiste_tabelle(client, as_student, konto):
     html = seite(client, as_student, "Studium").text
-    h1, nav, table = html.index("<h1>SyncShare</h1>"), html.index('class="crumbs"'), html.index('<table class="table">')
+    h1, nav, table = html.index("<h1>SyncShare</h1>"), html.index('class="crumbs"'), html.index('<table class="table"')
     assert h1 < nav < table
     assert "<h2" not in html[h1:table] and 'class="lead"' not in html  # kein Ordnername als Überschrift, kein Satz
     assert 'aria-current="page">Studium<' in html

@@ -12,8 +12,8 @@ from typing import Annotated
 from urllib.parse import quote, urlencode
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from platform_sdk import AdapterError, Portal, User
@@ -63,7 +63,7 @@ STATUS_TEXTS = {
 DONE = {
     "ordner": "Der Ordner wurde angelegt.",
     "hochgeladen": "Die Datei wurde hochgeladen.",
-    "umbenannt": "Umbenannt beziehungsweise verschoben.",
+    "umbenannt": "Umbenannt.",
     "geloescht": "Gelöscht. Es liegt jetzt im Papierkorb von bwSync&Share.",
     "verbunden": "Ihr bwSync&Share-Konto ist verbunden.",
     "getrennt": "Ihr bwSync&Share-Konto ist getrennt. Das App-Passwort von SyncShare wurde in bwSync&Share widerrufen.",
@@ -206,6 +206,8 @@ def build_router(portal: Portal) -> APIRouter:
                     "modified": date_text(entry.modified),
                     "open_url": folder_url(entry_path) if is_folder else None,
                     "download_url": None if is_folder else link("/datei", pfad=entry_path),
+                    "pfad": entry_path,
+                    "art": kind,
                     "rename_url": link("/umbenennen", pfad=entry_path, art=kind),
                     "delete_url": link("/loeschen", pfad=entry_path, art=kind),
                 }
@@ -235,6 +237,7 @@ def build_router(portal: Portal) -> APIRouter:
             done=DONE.get(ok, "") if not errors else "",
             values=values or {},
             mkdir_url=link("/ordner"),
+            rename_action=link("/umbenennen"),
             upload_url=link("/upload"),
             max_mb=MAX_BYTES // (1024 * 1024),
         )
@@ -351,9 +354,11 @@ def build_router(portal: Portal) -> APIRouter:
             )
         return back_to(parent_of(pfad), "geloescht")
 
-    # --- Umbenennen und verschieben -------------------------------------------------------------------------
+    # --- Umbenennen (nur der Name, im selben Ordner) ---------------------------------------------------------
+    # Normalfall: direkt in der Tabelle (app.js schickt POST mit Accept: application/json, Antwort JSON).
+    # Ohne JavaScript: eigene Seite als Ausweichweg. Verschieben gibt es nicht mehr; der Elternordner bleibt.
 
-    async def rename_page(user: User, pfad: str, art: str, *, name=None, ziel=None, errors=None, status_code=200):
+    async def rename_page(user: User, pfad: str, art: str, *, name=None, errors=None, status_code=200):
         return await render(
             user,
             "umbenennen.html",
@@ -361,7 +366,6 @@ def build_router(portal: Portal) -> APIRouter:
             status_code,
             old_name=name_of(pfad),
             name=name_of(pfad) if name is None else name,
-            ziel=parent_of(pfad) if ziel is None else ziel,
             pfad=pfad,
             art=art,
             kind=KINDS[art],
@@ -369,6 +373,15 @@ def build_router(portal: Portal) -> APIRouter:
             back_url=folder_url(parent_of(pfad)),
             errors=errors or {},
         )
+
+    def rename_problem(name: str, pfad: str) -> str | None:
+        if "/" in name:
+            return "Der Name darf kein „/“ enthalten. Verschieben ist hier nicht möglich."
+        if not valid_name(name):
+            return INVALID_NAME
+        if name == name_of(pfad):
+            return "Bitte geben Sie einen neuen Namen an."
+        return None
 
     @router.get("/umbenennen", response_class=HTMLResponse)
     async def rename_form(
@@ -380,40 +393,39 @@ def build_router(portal: Portal) -> APIRouter:
 
     @router.post("/umbenennen", response_class=HTMLResponse)
     async def rename(
+        request: Request,
         user: User = Depends(portal.user),
         pfad: Annotated[str, Form()] = "",
         art: Annotated[str, Form()] = "",
         name: Annotated[str, Form()] = "",
-        ziel: Annotated[str, Form()] = "",
     ) -> Response:
+        as_json = "application/json" in request.headers.get("accept", "")
+
+        def failed(text: str, status_code: int) -> Response | None:
+            if as_json:
+                return JSONResponse({"error": text}, status_code=status_code, headers={"Cache-Control": "no-store"})
+            return None
+
         if not target_ok(pfad, art):
-            return await explorer(user, "", errors={"liste": INVALID_PATH}, status_code=400)
-        name, ziel = name.strip(), ziel.strip().strip("/")
-        errors = {}
-        if not valid_name(name):
-            errors["name"] = INVALID_NAME
-        if not valid_path(ziel):
-            errors["ziel"] = (
-                "Bitte geben Sie den Ordner als Pfad an, zum Beispiel Studium/Semester 5, oder lassen Sie "
-                "das Feld für die oberste Ebene leer."
+            return failed(INVALID_PATH, 400) or await explorer(
+                user, "", errors={"liste": INVALID_PATH}, status_code=400
             )
-        target = join(ziel, name)
-        if not errors and target == pfad:
-            errors["name"] = "Bitte geben Sie einen neuen Namen oder einen anderen Ordner an."
-        if not errors and art == "ordner" and target.startswith(pfad + "/"):
-            errors["ziel"] = "Ein Ordner kann nicht in sich selbst verschoben werden."
-        if errors:
-            return await rename_page(user, pfad, art, name=name, ziel=ziel, errors=errors, status_code=400)
+        name = name.strip()
+        text = rename_problem(name, pfad)
+        if text:
+            return failed(text, 400) or await rename_page(
+                user, pfad, art, name=name, errors={"name": text}, status_code=400
+            )
+        folder = parent_of(pfad)  # immer derselbe Elternordner
         try:
-            await bwsync.move(pfad, target)
+            await bwsync.move(pfad, join(folder, name))
         except AdapterError as exc:
-            field = "ziel" if exc.type == "bwsync-parent-missing" else "name"
-            text = problem_text(exc)
-            if exc.type == "bwsync-parent-missing":
-                text = "Den Zielordner gibt es nicht. Bitte prüfen Sie den Pfad."
-            return await rename_page(
-                user, pfad, art, name=name, ziel=ziel, errors={field: text}, status_code=page_status(exc)
+            text, status_code = problem_text(exc), page_status(exc)
+            return failed(text, status_code) or await rename_page(
+                user, pfad, art, name=name, errors={"name": text}, status_code=status_code
             )
-        return back_to(ziel, "umbenannt")
+        if as_json:
+            return JSONResponse({"url": folder_url(folder, ok="umbenannt")}, headers={"Cache-Control": "no-store"})
+        return back_to(folder, "umbenannt")
 
     return router

@@ -36,7 +36,7 @@
 
 {% if rows %}
 <div class="table-wrap">
-  <table class="table">
+  <table class="table" data-rename-url="{{ rename_action }}">
     <caption class="visually-hidden">Inhalt von {{ title }}</caption>
     <thead>
       <tr>
@@ -49,15 +49,15 @@
     </thead>
     <tbody>
       {% for r in rows %}
-      <tr>
-        <th scope="row">{% if r.folder %}<a href="{{ r.open_url }}">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</th>
+      <tr data-pfad="{{ r.pfad }}" data-art="{{ r.art }}" data-name="{{ r.name }}">
+        <th scope="row" data-name-cell>{% if r.folder %}<a href="{{ r.open_url }}">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</th>
         <td>{{ "Ordner" if r.folder else "Datei" }}</td>
         <td class="num">{{ r.size }}</td>
         <td>{{ r.modified }}</td>
         <td>
           <div class="actions">
             {% if r.download_url %}<a href="{{ r.download_url }}">Herunterladen<span class="visually-hidden">: {{ r.name }}</span></a>{% endif %}
-            <a href="{{ r.rename_url }}">Umbenennen<span class="visually-hidden">: {{ r.name }}</span></a>
+            <a href="{{ r.rename_url }}" data-rename>Umbenennen<span class="visually-hidden">: {{ r.name }}</span></a>
             <a href="{{ r.delete_url }}">Löschen<span class="visually-hidden">: {{ r.name }}</span></a>
           </div>
         </td>
