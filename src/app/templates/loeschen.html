@@ -1,11 +1,14 @@
-{# Rückfall ohne JavaScript; mit JavaScript fragt der Dialog in der Tabelle (gleiche Texte aus delete_texts). #}
-<h1>{{ texts.title }}</h1>
+<h1>{{ kind }} löschen?</h1>
 
 {% include "_meldungen.html" %}
 
-<p id="loeschen">{{ texts.question.before }} <strong>{{ texts.question.name }}</strong> {{ texts.question.after }}</p>
-{% if texts.content %}<p id="ordner-inhalt">{{ texts.content }}</p>{% endif %}
-<p class="muted">{{ texts.hint }}</p>
+<p id="loeschen">Wollen Sie {{ "den Ordner" if folder else "die Datei" }} <strong>{{ name }}</strong> in „{{ where }}“ wirklich löschen?</p>
+{% if folder %}
+{% if content %}<p id="ordner-inhalt">{{ content }}</p>{% endif %}
+<p class="muted">Alles landet im Papierkorb von bwSync&amp;Share und lässt sich dort für einige Zeit wiederherstellen.</p>
+{% else %}
+<p class="muted">Gelöschtes liegt danach im Papierkorb von bwSync&amp;Share und lässt sich dort wiederherstellen.</p>
+{% endif %}
 
 <form method="post" action="{{ action }}">
   <input type="hidden" name="pfad" value="{{ pfad }}">

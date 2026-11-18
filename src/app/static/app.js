@@ -183,10 +183,9 @@
     input.addEventListener("blur", save);
   }
 
-  // --- Löschen: Rückfrage als Dialog -----------------------------------------------------------------------------
-  // Klick auf „Löschen“: Texte von /loeschen (JSON, dieselben wie auf der Seite) holen, Dialog füllen und öffnen.
-  // „Löschen“ im Dialog: kit.js schickt #loeschen-form ab (POST /loeschen, Fehler wie bisher auf der Seite).
-  // Ohne JavaScript oder wenn die Texte nicht kommen: der normale Link auf die Seite /loeschen.
+  // --- Löschen: Bestätigung wie beim Trennen -----------------------------------------------------------------------
+  // Klick auf „Löschen“: Titel, Name und Pfad aus der Zeile in den Dialog, dann öffnen. „Löschen“ im Dialog: kit.js
+  // schickt #loeschen-form ab (POST /loeschen). Ohne JavaScript führt der Link auf die Seite /loeschen.
   var deleteDialog = document.getElementById("loeschen-dialog");
   var deleteForm = document.getElementById("loeschen-form");
   if (table && deleteDialog && deleteForm && deleteDialog.showModal) {
@@ -194,31 +193,14 @@
       var trigger = e.target.closest && e.target.closest("[data-delete]");
       if (!trigger) return;
       e.preventDefault();
-      openDelete(trigger.closest("tr"), trigger.href);
+      var row = trigger.closest("tr");
+      document.getElementById("loeschen-titel").textContent =
+        row.dataset.art === "ordner" ? "Ordner löschen?" : "Datei löschen?";
+      document.getElementById("loeschen-name").textContent = row.dataset.name;
+      deleteForm.elements.pfad.value = row.dataset.pfad;
+      deleteForm.elements.art.value = row.dataset.art;
+      deleteDialog.returnValue = "";
+      deleteDialog.showModal();
     });
-  }
-
-  async function openDelete(row, href) {
-    var texts = null;
-    try {
-      var response = await fetch(href, { credentials: "same-origin", headers: { Accept: "application/json" } });
-      if (response.ok) texts = await response.json();
-    } catch (e) {
-      texts = null;
-    }
-    if (!texts || typeof texts.title !== "string" || !texts.question) return window.location.assign(href);
-    var question = document.getElementById("loeschen-frage");
-    var name = document.createElement("strong");
-    name.textContent = texts.question.name;
-    question.replaceChildren(texts.question.before + " ", name, " " + texts.question.after);
-    document.getElementById("loeschen-titel").textContent = texts.title;
-    var content = document.getElementById("loeschen-inhalt");
-    content.textContent = texts.content || "";
-    content.hidden = !texts.content;
-    document.getElementById("loeschen-hinweis").textContent = texts.hint;
-    deleteForm.elements.pfad.value = row.dataset.pfad;
-    deleteForm.elements.art.value = row.dataset.art;
-    deleteDialog.returnValue = "";
-    deleteDialog.showModal();
   }
 })();

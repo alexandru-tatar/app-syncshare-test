@@ -838,6 +838,7 @@ def test_loeschen_link_bleibt_rueckfall_und_oeffnet_dialog(client, as_student, k
     assert '<button value="confirm" class="btn btn--primary">Löschen</button>' in knoepfe
     assert knoepfe.index("Abbrechen") < knoepfe.index(">Löschen<")
     assert dialog.count("<button") == 2 and "<style" not in html and "style=" not in dialog
+    assert "Papierkorb von bwSync&amp;Share" in dialog and "mit ihrem ganzen Inhalt" in dialog
     formular = re.search(r'<form id="loeschen-form" method="post" action="([^"]+)" hidden>', html)
     assert formular and unescape(formular.group(1)) == portal.url("/loeschen")
 
@@ -848,42 +849,10 @@ def test_ohne_eintraege_kein_loeschen_dialog(client, as_student, konto):
     assert 'id="loeschen-dialog"' not in seite(client, as_student).text
 
 
-def json_rueckfrage(client, as_student, **params):
-    return client.get(portal.url("/loeschen"), headers={**as_student, "Accept": "application/json"}, params=params)
-
-
-def test_dialog_texte_wie_auf_der_seite(client, as_student, konto):
-    antwort = json_rueckfrage(client, as_student, pfad="Studium", art="ordner")
-    assert antwort.status_code == 200 and antwort.headers["cache-control"] == "no-store"
-    texte = antwort.json()
-    assert texte == {
-        "title": "Ordner löschen?",
-        "question": {
-            "before": "Wollen Sie den Ordner",
-            "name": "Studium",
-            "after": "in „Mein bwSync&Share“ wirklich löschen?",
-        },
-        "content": "Direkt darin: 1 Datei und 1 Ordner. Unterordner werden mit ihrem ganzen Inhalt gelöscht.",
-        "hint": "Alles landet im Papierkorb von bwSync&Share und lässt sich dort für einige Zeit wiederherstellen.",
-    }
-    seite_ = client.get(portal.url("/loeschen"), headers=as_student, params={"pfad": "Studium", "art": "ordner"}).text
-    for text in (texte["title"], texte["content"], texte["hint"], texte["question"]["after"]):
-        assert text.replace("&", "&amp;") in seite_
-    datei = json_rueckfrage(client, as_student, pfad="Studium/plan.pdf", art="datei").json()
-    assert datei["title"] == "Datei löschen?" and datei["content"] is None
-    assert datei["question"]["after"] == "in „Studium“ wirklich löschen?"
-    assert aenderungen(konto) == []  # die Rückfrage ändert nie etwas
-
-
-def test_dialog_texte_ungueltig_als_json(client, as_student, konto):
-    antwort = json_rueckfrage(client, as_student, pfad="../zeta.txt", art="datei")
-    assert antwort.status_code == 400 and antwort.json() == {"error": "Diesen Ordner kann SyncShare nicht öffnen."}
-
-
 def test_skript_loeschen_dialog(client, as_student):
     js = client.get(portal.url("/static/app.js"), headers=as_student).text
     teil = js[js.index("// --- Löschen") :]
     assert 'closest("[data-delete]")' in teil and "e.preventDefault()" in teil
-    assert 'headers: { Accept: "application/json" }' in teil and "window.location.assign(href)" in teil  # Rückfall
-    assert "deleteDialog.showModal()" in teil and "deleteForm.elements.pfad.value = row.dataset.pfad" in teil
-    assert "innerHTML" not in js and "textContent = texts.title" in teil
+    assert "fetch(" not in teil and "innerHTML" not in js  # nur Werte aus der Zeile, kein Nachladen
+    assert "textContent = row.dataset.name" in teil and "deleteForm.elements.pfad.value = row.dataset.pfad" in teil
+    assert "deleteDialog.showModal()" in teil

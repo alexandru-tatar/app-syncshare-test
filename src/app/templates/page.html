@@ -69,19 +69,17 @@
   </table>
 </div>
 
-{# Löschen: Rückfrage als Dialog wie beim Trennen. app.js füllt die Texte (JSON von /loeschen) und öffnet ihn;
+{# Löschen: Bestätigung wie beim Trennen. app.js setzt nur Titel, Name und Pfad aus der Zeile und öffnet den Dialog;
    nach „Löschen“ schickt kit.js das Formular ab (data-submit-form). Ohne JavaScript führt der Link auf /loeschen. #}
 <form id="loeschen-form" method="post" action="{{ delete_action }}" hidden>
   <input type="hidden" name="pfad" value="">
   <input type="hidden" name="art" value="">
 </form>
-<dialog id="loeschen-dialog" aria-labelledby="loeschen-titel" aria-describedby="loeschen-frage"
-  data-submit-form="loeschen-form">
+<dialog id="loeschen-dialog" aria-labelledby="loeschen-titel" data-submit-form="loeschen-form">
   <form method="dialog">
-    <h2 id="loeschen-titel"></h2>
-    <p id="loeschen-frage"></p>
-    <p id="loeschen-inhalt" hidden></p>
-    <p class="muted" id="loeschen-hinweis"></p>
+    <h2 id="loeschen-titel">Löschen?</h2>
+    <p>Wollen Sie <strong id="loeschen-name"></strong> wirklich löschen? Es landet im Papierkorb von bwSync&amp;Share
+      und lässt sich dort wiederherstellen. Ordner werden mit ihrem ganzen Inhalt gelöscht.</p>
     <div class="dialog__actions">
       <button value="cancel" class="btn btn--secondary" autofocus>Abbrechen</button>
       <button value="confirm" class="btn btn--primary">Löschen</button>
