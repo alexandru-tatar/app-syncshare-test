@@ -60,7 +60,7 @@
             <a href="{{ r.download_url }}">Herunterladen<span class="visually-hidden">: {{ r.name }}{% if r.folder %} als ZIP{% endif %}</span></a>
             <a href="{{ r.rename_url }}" data-rename>Umbenennen<span class="visually-hidden">: {{ r.name }}</span></a>
             <a href="{{ r.move_url }}">Verschieben<span class="visually-hidden">: {{ r.name }}</span></a>
-            <a href="{{ r.delete_url }}">Löschen<span class="visually-hidden">: {{ r.name }}</span></a>
+            <a href="{{ r.delete_url }}" data-delete>Löschen<span class="visually-hidden">: {{ r.name }}</span></a>
           </div>
         </td>
       </tr>
@@ -68,6 +68,26 @@
     </tbody>
   </table>
 </div>
+
+{# Löschen: Rückfrage als Dialog wie beim Trennen. app.js füllt die Texte (JSON von /loeschen) und öffnet ihn;
+   nach „Löschen“ schickt kit.js das Formular ab (data-submit-form). Ohne JavaScript führt der Link auf /loeschen. #}
+<form id="loeschen-form" method="post" action="{{ delete_action }}" hidden>
+  <input type="hidden" name="pfad" value="">
+  <input type="hidden" name="art" value="">
+</form>
+<dialog id="loeschen-dialog" aria-labelledby="loeschen-titel" aria-describedby="loeschen-frage"
+  data-submit-form="loeschen-form">
+  <form method="dialog">
+    <h2 id="loeschen-titel"></h2>
+    <p id="loeschen-frage"></p>
+    <p id="loeschen-inhalt" hidden></p>
+    <p class="muted" id="loeschen-hinweis"></p>
+    <div class="dialog__actions">
+      <button value="cancel" class="btn btn--secondary" autofocus>Abbrechen</button>
+      <button value="confirm" class="btn btn--primary">Löschen</button>
+    </div>
+  </form>
+</dialog>
 {% else %}
 <p>Dieser Ordner ist leer.</p>
 {% endif %}

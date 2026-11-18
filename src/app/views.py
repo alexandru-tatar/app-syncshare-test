@@ -196,6 +196,7 @@ def build_router(portal: Portal) -> APIRouter:
             rename_action=link("/umbenennen"),
             upload_url=link("/upload"),
             max_mb=MAX_BYTES // (1024 * 1024),
+            delete_action=link("/loeschen"),
         )
 
     @router.get("/", response_class=HTMLResponse)
@@ -307,19 +308,31 @@ def build_router(portal: Portal) -> APIRouter:
             text += f" sowie {listing.skipped} weitere, die SyncShare nicht anzeigt"
         return f"Direkt darin: {text}. Unterordner werden mit ihrem ganzen Inhalt gelöscht."
 
+    async def delete_texts(pfad: str, art: str) -> dict:
+        """Texte der Rückfrage; dieselben für die Seite /loeschen und den Dialog (app.js holt sie als JSON)."""
+        folder = art == "ordner"
+        return {
+            "title": f"{KINDS[art]} löschen?",
+            "question": {
+                "before": f"Wollen Sie {'den Ordner' if folder else 'die Datei'}",
+                "name": name_of(pfad),
+                "after": f"in „{parent_of(pfad) or ROOT_NAME}“ wirklich löschen?",
+            },
+            "content": await folder_content(pfad) if folder else None,
+            "hint": "Alles landet im Papierkorb von bwSync&Share und lässt sich dort für einige Zeit wiederherstellen."
+            if folder
+            else "Gelöschtes liegt danach im Papierkorb von bwSync&Share und lässt sich dort wiederherstellen.",
+        }
+
     async def delete_page(user: User, pfad: str, art: str, *, errors=None, status_code=200) -> HTMLResponse:
         return await render(
             user,
             "loeschen.html",
             f"{KINDS[art]} löschen – SyncShare",
             status_code,
-            name=name_of(pfad),
-            where=parent_of(pfad) or ROOT_NAME,
+            texts=await delete_texts(pfad, art),
             pfad=pfad,
             art=art,
-            kind=KINDS[art],
-            folder=art == "ordner",
-            content=await folder_content(pfad) if art == "ordner" else None,
             action=link("/loeschen"),
             back_url=folder_url(parent_of(pfad)),
             errors=errors or {},
@@ -327,10 +340,18 @@ def build_router(portal: Portal) -> APIRouter:
 
     @router.get("/loeschen", response_class=HTMLResponse)
     async def confirm_delete(
-        user: User = Depends(portal.user), pfad: Annotated[str, Query()] = "", art: Annotated[str, Query()] = ""
-    ) -> HTMLResponse:
+        request: Request,
+        user: User = Depends(portal.user),
+        pfad: Annotated[str, Query()] = "",
+        art: Annotated[str, Query()] = "",
+    ) -> Response:
+        as_json = "application/json" in request.headers.get("accept", "")
         if not target_ok(pfad, art):
+            if as_json:
+                return JSONResponse({"error": INVALID_PATH}, status_code=400, headers={"Cache-Control": "no-store"})
             return await explorer(user, "", errors={"liste": INVALID_PATH}, status_code=400)
+        if as_json:  # Texte für den Dialog in der Tabelle; ohne JavaScript bleibt diese Seite der Weg
+            return JSONResponse(await delete_texts(pfad, art), headers={"Cache-Control": "no-store"})
         return await delete_page(user, pfad, art)
 
     @router.post("/loeschen", response_class=HTMLResponse)
