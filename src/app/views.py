@@ -35,6 +35,9 @@ INVALID_NAME = (
 )
 INVALID_PATH = "Diesen Ordner kann SyncShare nicht öffnen."
 UNAVAILABLE = "bwSync&Share ist gerade nicht erreichbar. Bitte versuchen Sie es später erneut."
+TOO_SLOW = "bwSync&Share antwortet gerade zu langsam. Bitte versuchen Sie es gleich noch einmal."
+# Fachlicher Fehler, den SyncShare (noch) nicht kennt: allgemein, aber nicht „nicht erreichbar“
+NOT_POSSIBLE = "Das hat in bwSync&Share nicht geklappt. Bitte laden Sie die Seite neu und versuchen Sie es erneut."
 
 # Fehlertypen (Konstanten aus dem SDK), in eigenen Worten; Bedeutung: platform_sdk/adapters/bwsync/README.md
 PROBLEMS = {
@@ -53,14 +56,13 @@ PROBLEMS = {
     bwsync_errors.TOO_LARGE: "Die Datei ist zu groß.",
     bwsync_errors.LOCKED: "Die Datei ist gerade gesperrt, zum Beispiel weil sie geöffnet ist. Bitte versuchen Sie es "
     "später erneut.",
-}
-# Fehler ohne eigenen type (z. B. 400): nach status
-STATUS_TEXTS = {
-    400: "Das geht so nicht. Bitte prüfen Sie Ordner und Namen.",
-    404: PROBLEMS[bwsync_errors.NOT_FOUND],
-    412: PROBLEMS[bwsync_errors.EXISTS],
-    413: PROBLEMS[bwsync_errors.TOO_LARGE],
-    423: PROBLEMS[bwsync_errors.LOCKED],
+    bwsync_errors.NOT_A_FILE: "Das ist ein Ordner, keine Datei. Bitte laden Sie die Seite neu.",
+    bwsync_errors.NOT_A_FOLDER: "Das ist eine Datei, kein Ordner. Bitte laden Sie die Seite neu.",
+    bwsync_errors.MOVE_INTO_SELF: "Ein Ordner kann nicht in sich selbst verschoben werden. Bitte wählen Sie einen "
+    "anderen Ordner.",
+    bwsync_errors.FOLDER_TOO_LARGE: "Dieser Ordner ist zu groß für SyncShare. Bitte öffnen Sie ihn direkt in "
+    "bwSync&Share.",
+    transport.BACKEND_TIMEOUT: TOO_SLOW,
 }
 # Erfolgsmeldungen nach der Umleitung: nur feste Schlüssel, kein Text aus der Adresse
 DONE = {
@@ -80,7 +82,14 @@ KINDS = {"datei": "Datei", "ordner": "Ordner"}
 
 
 def problem_text(exc: AdapterError) -> str:
-    return PROBLEMS.get(exc.type) or STATUS_TEXTS.get(exc.status) or UNAVAILABLE
+    """Eigener Text nach type. Aufruf-Fehler (Programmierfehler, z. B. scope-not-granted) behandelt SyncShare nicht
+    selbst: Sie gehen an die Standardbehandlung des SDK („Fehler in der Anwendung“ mit Vorgangsnummer)."""
+    kind = transport.category(exc)
+    if kind == "call":
+        raise exc
+    if exc.type in PROBLEMS:
+        return PROBLEMS[exc.type]
+    return UNAVAILABLE if kind == "technical" else NOT_POSSIBLE
 
 
 def page_status(exc: AdapterError) -> int:
@@ -132,7 +141,10 @@ def build_router(portal: Portal) -> APIRouter:
                 if exc.type in bwsync_errors.LINK_PROBLEMS:
                     link_problem = exc.type
                 else:
-                    errors.setdefault("liste", problem_text(exc))
+                    # Ohne Liste gibt es keine Formulare: derselbe Text (Anlegen und Liste scheitern) nur einmal oben
+                    text = problem_text(exc)
+                    errors = {field: message for field, message in errors.items() if message != text}
+                    errors.setdefault("liste", text)
                 if status_code == 200:
                     status_code = page_status(exc)
         rows = []
@@ -161,6 +173,7 @@ def build_router(portal: Portal) -> APIRouter:
             "SyncShare",
             status_code,
             pfad=path if folder else "",
+            at_root=path == "",
             folder=folder,
             rows=rows,
             crumbs=crumbs(path) if folder else [],
@@ -228,6 +241,8 @@ def build_router(portal: Portal) -> APIRouter:
         try:
             await portal.adapters.bwsync.upload(join(pfad, name), data)
         except AdapterError as exc:
+            if exc.type in bwsync_errors.LINK_PROBLEMS:  # den Hinweis zum Verbinden zeigt die Seite schon
+                return await explorer(user, pfad, status_code=page_status(exc))
             return await explorer(user, pfad, errors={"datei": problem_text(exc)}, status_code=page_status(exc))
         return back_to(pfad, "hochgeladen")
 
@@ -238,9 +253,12 @@ def build_router(portal: Portal) -> APIRouter:
         try:
             data = await portal.adapters.bwsync.download(pfad, max_bytes=MAX_BYTES)
         except AdapterError as exc:
-            msg = "Die Datei konnte nicht heruntergeladen werden. " + problem_text(exc)
+            if exc.type in bwsync_errors.LINK_PROBLEMS:  # den Hinweis zum Verbinden zeigt die Seite schon
+                return await explorer(user, parent_of(pfad), status_code=page_status(exc))
             if exc.type == transport.DOWNLOAD_TOO_LARGE:
                 msg = f"Die Datei ist größer als {MAX_BYTES // (1024 * 1024)} MB; SyncShare kann sie nicht abholen."
+            else:
+                msg = "Die Datei konnte nicht heruntergeladen werden. " + problem_text(exc)
             return await explorer(user, parent_of(pfad), errors={"liste": msg}, status_code=page_status(exc))
         # Nie im Browser ausführen oder anzeigen: immer als Download, ohne Typ-Erkennung.
         return Response(
@@ -257,6 +275,8 @@ def build_router(portal: Portal) -> APIRouter:
         try:
             stream = await portal.adapters.bwsync.download_zip(pfad)
         except AdapterError as exc:
+            if exc.type in bwsync_errors.LINK_PROBLEMS:  # den Hinweis zum Verbinden zeigt die Seite schon
+                return await explorer(user, parent_of(pfad), status_code=page_status(exc))
             msg = "Der Ordner konnte nicht heruntergeladen werden. " + problem_text(exc)
             return await explorer(user, parent_of(pfad), errors={"liste": msg}, status_code=page_status(exc))
         return StreamingResponse(

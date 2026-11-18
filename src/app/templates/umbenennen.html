@@ -10,8 +10,10 @@
   <div class="field">
     <label for="name">Neuer Name <span class="field__required">(Pflichtfeld)</span></label>
     <p class="field__hint" id="name-hinweis">Bleibt im selben Ordner. Vorhandenes wird nie überschrieben.</p>
-    <input type="text" id="name" name="name" value="{{ name }}" maxlength="255" aria-describedby="name-hinweis" required>
-    {% if errors.name %}<p class="field__error">{{ errors.name }}</p>{% endif %}
+    <input type="text" id="name" name="name" value="{{ name }}" maxlength="255"
+      aria-describedby="name-hinweis{% if errors.name %} name-fehler{% endif %}"
+      {% if errors.name %}aria-invalid="true"{% endif %} required>
+    {% if errors.name %}<p class="field__error" id="name-fehler">{{ errors.name }}</p>{% endif %}
   </div>
   <div class="actions">
     <button type="submit" class="btn btn--primary">Speichern</button>

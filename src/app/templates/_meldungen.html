@@ -4,7 +4,7 @@
 {% set formularfelder = ("name", "datei") %}
 {% set nur_feld = errors and errors|length == 1 and (errors|list|first) in formularfelder %}
 {% if errors and not nur_feld %}
-<div class="error-summary" role="alert">
+<div class="error-summary" role="alert" tabindex="-1">
   <h2>Das hat nicht geklappt</h2>
   <ul>
     {% for field, message in errors.items() %}
@@ -13,5 +13,6 @@
   </ul>
 </div>
 {% elif done %}
-<div class="notice" role="status"><p>{{ done }}</p></div>
+{# data-done: app.js entfernt die Meldung, sobald Verbinden oder Trennen beginnt #}
+<div class="notice" role="status" data-done><p>{{ done }}</p></div>
 {% endif %}

@@ -6,6 +6,8 @@ import pytest
 from conftest import make_token
 
 from app.main import portal
+from platform_sdk.adapters import transport
+from platform_sdk.adapters.bwsync import errors as bwsync_errors
 
 
 def test_healthz_ohne_anmeldung(client):
@@ -105,14 +107,30 @@ def test_navigieren_mit_brotkrumen(client, as_student, konto):
     assert "Dieser Ordner ist leer." in html and "Eine Ebene höher" not in html  # die Pfadleiste reicht
 
 
-def test_formularfelder_ohne_sichtbares_label(client, as_student, konto):
+def test_formularfelder_mit_sichtbarem_label_und_pflichtfeld(client, as_student, konto):
     html = seite(client, as_student).text
-    assert '<label for="name" class="visually-hidden">Name des Ordners</label>' in html
-    assert '<label for="datei" class="visually-hidden">Datei</label>' in html
-    assert "(Pflichtfeld)" not in html
+    pflicht = '<span class="field__required">(Pflichtfeld)</span>'
+    assert f'<label for="name">Name des Ordners {pflicht}</label>' in html
+    assert f'<label for="datei">Datei {pflicht}</label>' in html
+    assert 'class="visually-hidden">Name' not in html and 'class="visually-hidden">Datei' not in html
     assert '<caption class="visually-hidden">Inhalt von Mein bwSync&amp;Share</caption>' in html
-    assert re.search(r'<input type="text" id="name"[^>]*placeholder="Neuer Ordner"[^>]*required>', html)
-    assert re.search(r'<input type="file" id="datei"[^>]*required>', html)
+    assert re.search(r'<input type="text" id="name"[^>]*aria-describedby="name-hinweis"\s+required>', html)
+    assert re.search(r'<input type="file" id="datei"[^>]*aria-describedby="datei-hinweis"\s+required>', html)
+    assert "aria-invalid" not in html and "-fehler" not in html  # nur im Fehlerfall
+
+
+def test_feldfehler_ist_mit_dem_feld_verknuepft(client, as_student, konto):
+    html = senden(client, as_student, "/ordner", pfad="", name="a:b").text
+    feld = re.search(r'<input type="text" id="name"[^>]*>', html).group(0)
+    assert 'aria-describedby="name-hinweis name-fehler"' in feld and 'aria-invalid="true"' in feld
+    assert '<p class="field__error" id="name-fehler">' in html
+    html = hochladen(client, as_student, name="a:b.txt").text
+    feld = re.search(r'<input type="file" id="datei"[^>]*>', html).group(0)
+    assert 'aria-describedby="datei-hinweis datei-fehler"' in feld and 'aria-invalid="true"' in feld
+    assert '<p class="field__error" id="datei-fehler">' in html
+    html = senden(client, as_student, "/umbenennen", pfad="zeta.txt", art="datei", name="zeta.txt").text
+    feld = re.search(r'<input type="text" id="name"[^>]*>', html).group(0)
+    assert 'aria-describedby="name-hinweis name-fehler"' in feld and 'aria-invalid="true"' in feld
 
 
 @pytest.mark.parametrize("pfad", ["..", "a/../b", "/etc", "a//b", "a:b", "x%2fy", "a\\b"])
@@ -305,7 +323,7 @@ def test_umbenennen_in_der_tabelle_fehler_als_json(client, as_student, konto, fo
 
 
 def test_umbenennen_gesperrte_datei(client, as_student, konto):
-    konto.fail = (423, None)
+    konto.fail = (423, bwsync_errors.LOCKED)
     antwort = json_umbenennen(client, as_student, pfad="zeta.txt", art="datei", name="omega.txt")
     assert antwort.status_code == 423 and "gesperrt" in antwort.json()["error"]
 
@@ -479,7 +497,14 @@ def test_ordner_rueckfrage_zeigt_inhalt_und_papierkorb(client, as_student, konto
 def test_ordner_rueckfrage_ohne_liste(client, as_student, konto):
     frage = client.get(portal.url("/loeschen"), headers=as_student, params={"pfad": "Fehlt", "art": "ordner"})
     assert frage.status_code == 200 and "ordner-inhalt" not in frage.text  # ohne Zahl, Löschen meldet den Fehler
-    assert "Ja, löschen" in frage.text
+    assert '<button type="submit" class="btn btn--primary">Löschen</button>' in frage.text
+
+
+def test_loeschen_knoepfe_abbrechen_links_ohne_ja(client, as_student, konto):
+    html = client.get(portal.url("/loeschen"), headers=as_student, params={"pfad": "zeta.txt", "art": "datei"}).text
+    aktionen = html[html.index('<div class="actions">') :]
+    assert aktionen.index(">Abbrechen</a>") < aktionen.index(">Löschen</button>")
+    assert "Ja, " not in html
 
 
 def test_ordner_mit_inhalt_loeschen(client, as_student, konto):
@@ -575,7 +600,7 @@ def test_verbunden_zeigt_trennen_mit_bestaetigung(client, as_student, konto):
     assert "<h1>SyncShare</h1>" in kopf
     assert re.search(
         r'<button type="button" class="btn btn--link" data-dialog-open="trennen-dialog">'
-        r"bwSync&amp;Share-Konto trennen</button>",
+        r"bwSync&amp;Share-Konto trennen …</button>",
         kopf,
     )
     dialog = html[html.index('<dialog id="trennen-dialog"') : html.index("</dialog>", html.index("trennen-dialog"))]
@@ -677,3 +702,109 @@ def test_hinweise_bei_vielen_und_ausgelassenen_eintraegen(client, as_student, ko
 def test_erfolgsmeldung_nur_aus_festen_texten(client, as_student, konto):
     html = seite(client, as_student, ok="<b>boese</b>").text
     assert "boese" not in html
+
+
+# --- Fehlertypen aus SDK 1.2.0-dev und Befunde aus dem UI-Review ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "kind,status,text",
+    [
+        (bwsync_errors.NOT_A_FOLDER, 409, "Das ist eine Datei, kein Ordner."),
+        (bwsync_errors.NOT_A_FILE, 409, "Das ist ein Ordner, keine Datei."),
+        (bwsync_errors.FOLDER_TOO_LARGE, 422, "direkt in bwSync&amp;Share"),
+        (bwsync_errors.MOVE_INTO_SELF, 400, "nicht in sich selbst verschoben"),
+        (transport.BACKEND_TIMEOUT, 504, "zu langsam"),
+        (transport.BACKEND_UNAVAILABLE, 503, "gerade nicht erreichbar"),
+        ("bwsync-ganz-neu", 409, "Das hat in bwSync&amp;Share nicht geklappt."),  # unbekannt: fachlich, allgemein
+    ],
+)
+def test_fehlertypen_mit_eigenem_text(client, as_student, konto, kind, status, text):
+    konto.fail = (status, kind)
+    antwort = seite(client, as_student, "Studium")
+    assert antwort.status_code == status and antwort.text.count(text) == 1
+    if kind not in (transport.BACKEND_TIMEOUT, transport.BACKEND_UNAVAILABLE):
+        assert "nicht erreichbar" not in antwort.text
+
+
+def test_liste_auf_einer_datei_und_loeschen_falscher_art(client, as_student, konto):
+    antwort = seite(client, as_student, "zeta.txt")  # Fake wie Adapter: 409 bwsync-not-a-folder
+    assert antwort.status_code == 409 and "Das ist eine Datei, kein Ordner." in antwort.text
+    antwort = senden(client, as_student, "/loeschen", pfad="zeta.txt", art="ordner")
+    assert antwort.status_code == 409 and "Das ist eine Datei, kein Ordner." in antwort.text
+    antwort = senden(client, as_student, "/loeschen", pfad="Studium", art="datei")
+    assert antwort.status_code == 409 and "Das ist ein Ordner, keine Datei." in antwort.text
+    assert aenderungen(konto) == [("DELETE", "/bwsync/folders/zeta.txt"), ("DELETE", "/bwsync/files/Studium")]
+    assert "zeta.txt" in konto.files and "Studium" in konto.folders  # nichts gelöscht
+
+
+def test_aufruf_fehler_geht_an_die_standardbehandlung_des_sdk(client, as_student, konto):
+    konto.fail = (403, transport.SCOPE_NOT_GRANTED)
+    antwort = client.get(portal.url("/"), headers={**as_student, "X-Request-Id": "req-42"})
+    assert antwort.status_code == 500
+    assert "Fehler in der Anwendung" in antwort.text and "Vorgangsnummer: req-42" in antwort.text
+    assert "nicht erreichbar" not in antwort.text and "scope" not in antwort.text.lower()
+
+
+def test_derselbe_fehler_nur_einmal(client, as_student, konto):
+    konto.fail = (503, None)  # Anlegen scheitert, die Liste danach auch
+    antwort = senden(client, as_student, "/ordner", pfad="", name="Neu")
+    assert antwort.text.count("gerade nicht erreichbar") == 1
+    antwort = hochladen(client, as_student)
+    assert antwort.text.count("gerade nicht erreichbar") == 1
+
+
+@pytest.mark.parametrize("route,pfad", [("/datei", "zeta.txt"), ("/zip", "Studium")])
+def test_herunterladen_nicht_verbunden_nur_ein_hinweis(client, as_student, konto, route, pfad):
+    konto.fail = (403, bwsync_errors.NOT_LINKED)
+    antwort = client.get(portal.url(route), headers=as_student, params={"pfad": pfad})
+    assert antwort.status_code == 403
+    assert "Verbinden Sie Ihr bwSync&amp;Share-Konto" in antwort.text
+    assert "nicht heruntergeladen" not in antwort.text and 'class="error-summary"' not in antwort.text
+
+
+def test_hochladen_nicht_verbunden_nur_ein_hinweis(client, as_student, konto):
+    konto.fail = (403, bwsync_errors.NOT_LINKED)
+    antwort = hochladen(client, as_student)
+    assert antwort.status_code == 403 and "Verbinden Sie Ihr bwSync&amp;Share-Konto" in antwort.text
+    assert "nicht verbunden. Bitte verbinden Sie es" not in antwort.text and 'class="field__error"' not in antwort.text
+
+
+def test_oberste_ebene_ohne_link_auf_sich_selbst(client, as_student, konto):
+    konto.fail = (503, None)
+    assert "Zur obersten Ebene" not in seite(client, as_student).text
+    assert "Zur obersten Ebene" in seite(client, as_student, "Studium").text
+    params = {"pfad": "Studium/plan.pdf", "art": "datei"}
+    oben = client.get(portal.url("/verschieben"), headers=as_student, params={**params, "ziel": ""}).text
+    darunter = client.get(portal.url("/verschieben"), headers=as_student, params={**params, "ziel": "Studium"}).text
+    assert "Zur obersten Ebene" not in oben and "Zur obersten Ebene" in darunter
+
+
+def test_fehlerkasten_fokussierbar_und_erfolgsmeldung_markiert(client, as_student, konto):
+    from app.views import templates
+
+    html = templates.get_template("_meldungen.html").render(errors={"liste": "x"}, done=None)
+    assert '<div class="error-summary" role="alert" tabindex="-1">' in html
+    html = seite(client, as_student, ok="verbunden").text
+    assert '<div class="notice" role="status" data-done>' in html
+
+
+def test_nach_dem_trennen_meldung_genau_einmal(client, as_student, konto):
+    konto.fail = (403, bwsync_errors.NOT_LINKED)
+    html = client.get(portal.url("/"), headers=as_student, params={"ok": "getrennt-behalten"}).text
+    assert html.count("Ihr bwSync&amp;Share-Konto ist getrennt.") == 1
+    assert 'class="error-summary"' not in html and "nicht erreichbar" not in html
+
+
+def test_skript_raeumt_erfolgsmeldung_auf_und_zeigt_fehler_deutlich(client, as_student):
+    js = client.get(portal.url("/static/app.js"), headers=as_student).text
+    assert 'url.searchParams.delete("ok")' in js and "history.replaceState" in js
+    assert 'querySelectorAll("[data-done]")' in js
+    verbinden = js[js.index('connect.addEventListener("click"') : js.index("// --- Trennen")]
+    assert verbinden.index("clearDone()") < verbinden.index("sdk.connect(")
+    assert "say(status, text, true)" in verbinden  # Fehler beim Verbinden: als Fehler
+    trennen = js[js.index("// --- Trennen") : js.index("// --- Umbenennen")]
+    assert trennen.index("clearDone()") < trennen.index("sdk.disconnect()")
+    assert "say(status, problem(error), true)" in trennen
+    assert 'el.classList.toggle("field__error", Boolean(isError))' in js
+    assert '"bwsync-link-failed":' in js

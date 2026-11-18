@@ -14,10 +14,29 @@
     "connect-aborted": "Die Anmeldung wurde abgebrochen oder ist abgelaufen. Bitte verbinden Sie erneut.",
     "portal-session-expired": "Ihre Anmeldung am Portal ist abgelaufen. Bitte laden Sie die Seite neu.",
     "bwsync-forbidden": "Dafür fehlt Ihnen in bwSync&Share die Berechtigung.",
+    "bwsync-link-failed": "bwSync&Share hat die Verbindung nicht angenommen. Bitte verbinden Sie erneut.",
   };
 
-  function say(el, text) {
-    if (el) el.textContent = text;
+  // Hinweis (grau) oder Fehler (wie ein Feldfehler, deutlich sichtbar)
+  function say(el, text, isError) {
+    if (!el) return;
+    el.textContent = text;
+    el.classList.toggle("muted", !isError);
+    el.classList.toggle("field__error", Boolean(isError));
+  }
+
+  // Erfolgsmeldung nach der Umleitung (?ok=…) nur einmal: nicht in der Adresse lassen (sonst beim Neuladen wieder)
+  // und entfernen, sobald eine neue Aktion beginnt (sonst steht sie neben einem neuen Fehler).
+  if (window.history && window.history.replaceState && /[?&]ok=/.test(window.location.search)) {
+    var url = new URL(window.location.href);
+    url.searchParams.delete("ok");
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+  }
+
+  function clearDone() {
+    document.querySelectorAll("[data-done]").forEach(function (el) {
+      el.remove();
+    });
   }
 
   function problem(error) {
@@ -33,6 +52,7 @@
     connect.addEventListener("click", function () {
       if (waiting) return;
       waiting = true;
+      clearDone();
       // Sofort: Button aus, der einzige Hinweis da. Er ändert sich danach nicht mehr, nur ein Fehler ersetzt ihn.
       connect.disabled = true;
       sdk.connect(function (state) {
@@ -45,7 +65,7 @@
     function stop(text) {
       waiting = false;
       connect.disabled = false;
-      say(status, text);
+      say(status, text, true);
     }
   }
 
@@ -55,13 +75,14 @@
   if (dialog && sdk) {
     dialog.addEventListener("close", async function () {
       if (dialog.returnValue !== "confirm") return;
+      clearDone();
       var status = document.getElementById("trennen-status");
       say(status, "Das Konto wird getrennt …");
       var result;
       try {
         result = await sdk.disconnect();
       } catch (error) {
-        return say(status, problem(error));
+        return say(status, problem(error), true);
       }
       // revoked: true widerrufen, null von Hand angelegt (bleibt), false nicht bestätigt
       var next = result.revoked === true ? dialog.dataset.doneRevoked
