@@ -500,10 +500,18 @@ def test_ordner_rueckfrage_ohne_liste(client, as_student, konto):
     assert '<button type="submit" class="btn btn--primary">Löschen</button>' in frage.text
 
 
-def test_loeschen_knoepfe_abbrechen_links_ohne_ja(client, as_student, konto):
-    html = client.get(portal.url("/loeschen"), headers=as_student, params={"pfad": "zeta.txt", "art": "datei"}).text
+@pytest.mark.parametrize(
+    "route,params,aktion",
+    [
+        ("/loeschen", {"pfad": "zeta.txt", "art": "datei"}, ">Löschen</button>"),
+        ("/umbenennen", {"pfad": "zeta.txt", "art": "datei"}, ">Speichern</button>"),
+        ("/verschieben", {"pfad": "zeta.txt", "art": "datei", "ziel": "Studium"}, "verschieben</button>"),
+    ],
+)
+def test_knoepfe_abbrechen_links_ohne_ja(client, as_student, konto, route, params, aktion):
+    html = client.get(portal.url(route), headers=as_student, params=params).text
     aktionen = html[html.index('<div class="actions">') :]
-    assert aktionen.index(">Abbrechen</a>") < aktionen.index(">Löschen</button>")
+    assert aktionen.index(">Abbrechen</a>") < aktionen.index(aktion)
     assert "Ja, " not in html
 
 
