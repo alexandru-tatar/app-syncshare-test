@@ -1,0 +1,22 @@
+<h1>{{ kind }} umbenennen</h1>
+
+{% include "_meldungen.html" %}
+
+<p>{{ kind }}: <strong>{{ old_name }}</strong></p>
+
+<form method="post" action="{{ action }}">
+  <input type="hidden" name="pfad" value="{{ pfad }}">
+  <input type="hidden" name="art" value="{{ art }}">
+  <div class="field">
+    <label for="name">Neuer Name <span class="field__required">(Pflichtfeld)</span></label>
+    <p class="field__hint" id="name-hinweis">Bleibt im selben Ordner. Vorhandenes wird nie überschrieben.</p>
+    <input type="text" id="name" name="name" value="{{ name }}" maxlength="255"
+      aria-describedby="name-hinweis{% if errors.name %} name-fehler{% endif %}"
+      {% if errors.name %}aria-invalid="true"{% endif %} required>
+    {% if errors.name %}<p class="field__error" id="name-fehler">{{ errors.name }}</p>{% endif %}
+  </div>
+  <div class="actions">
+    <a class="btn" href="{{ back_url }}">Abbrechen</a>
+    <button type="submit" class="btn btn--primary">Speichern</button>
+  </div>
+</form>

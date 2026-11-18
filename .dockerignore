@@ -13,3 +13,16 @@ tools
 node_modules
 .devcontainer
 .agents
+
+# Exclude local credentials and history from the build context.
+.local
+**/secrets
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.jks
+**/*.keystore
+**/*.db
+**/*.sqlite
+**/*.sqlite3

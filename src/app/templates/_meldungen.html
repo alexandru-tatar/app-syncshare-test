@@ -1,0 +1,18 @@
+{# Jede Meldung nur einmal: Ein einzelner Fehler zu einem Formularfeld steht nur unter dem Feld (field__error).
+   Oben stehen Fehler ohne Feld (z. B. von bwSync) und, bei mehreren Fehlern, die Zusammenfassung.
+   Alle Einträge sind Text, keine Links: ein Anker auf dasselbe Formular ist kein echtes Ziel. #}
+{% set formularfelder = ("name", "datei") %}
+{% set nur_feld = errors and errors|length == 1 and (errors|list|first) in formularfelder %}
+{% if errors and not nur_feld %}
+<div class="error-summary" role="alert" tabindex="-1">
+  <h2>Das hat nicht geklappt</h2>
+  <ul>
+    {% for field, message in errors.items() %}
+    <li>{{ message }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% elif done %}
+{# data-done: app.js entfernt die Meldung, sobald Verbinden oder Trennen beginnt #}
+<div class="notice" role="status" data-done><p>{{ done }}</p></div>
+{% endif %}

@@ -1,1 +1,24 @@
 /* Eigenes CSS der App. Nur Variablen des Portals (var(--…)), keine Farbwerte. Skill „design“. */
+
+/* Kopf der Seite: rechts „bwSync&Share-Konto trennen“ (unter dem Portal-„Abmelden“, nicht im Kopf) */
+.page-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: var(--s-2) var(--s-6); margin: 0 0 var(--s-4); }
+.page-head h1 { margin: 0; }
+
+/* Datei-Explorer */
+/* Pfadleiste: <div class="crumbs"><ol aria-label="…"> (kein <nav>, das Menü kommt vom Portal, R-UI-1) */
+.crumbs ol { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: 0 0 var(--s-4); padding: 0; list-style: none; }
+.crumbs li + li::before { content: "/"; margin-right: var(--s-2); color: var(--ink-muted); }
+.crumbs [aria-current="page"] { font-weight: 700; }
+.explorer-forms { display: flex; flex-wrap: wrap; gap: var(--s-8); margin-top: var(--s-8); }
+.explorer-forms form { flex: 1 1 18rem; }
+
+/* Umbenennen direkt in der Tabelle */
+.rename-input { width: 100%; min-width: 12rem; padding: var(--s-1) var(--s-2); border: 1px solid var(--border-ui);
+  border-radius: var(--radius); background: var(--bg); color: var(--ink); font: inherit; }
+.rename-error { font-size: .9375rem; }
+
+/* Verschieben: Liste der Unterordner im Zielordner */
+.folder-pick { margin: 0 0 var(--s-6); padding: 0; list-style: none; max-width: 40rem; }
+.folder-pick li { border-bottom: 1px solid var(--border-soft); }
+.folder-pick a { display: block; padding: var(--s-2) var(--s-3); }

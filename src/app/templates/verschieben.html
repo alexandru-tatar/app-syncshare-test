@@ -1,0 +1,41 @@
+<h1>{{ kind }} verschieben</h1>
+
+{% include "_meldungen.html" %}
+
+<p>{{ kind }} <strong>{{ name }}</strong> aus „{{ where }}“. Wählen Sie den Zielordner und verschieben Sie dann hierher.</p>
+
+<div class="crumbs">
+  <ol aria-label="Zielordner">
+    {% for c in crumbs %}
+    <li>{% if loop.last %}<span aria-current="page">{{ c.name }}</span>{% else %}<a href="{{ c.url }}">{{ c.name }}</a>{% endif %}</li>
+    {% endfor %}
+  </ol>
+</div>
+
+{% if listed %}
+{% if folders %}
+<ul class="folder-pick">
+  {% for f in folders %}
+  <li><a href="{{ f.url }}">{{ f.name }}<span class="visually-hidden"> öffnen</span></a></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">Hier gibt es keine weiteren Ordner.</p>
+{% endif %}
+{% elif ziel %}
+{# Auf der obersten Ebene wäre der Link dieselbe Seite: dann keiner. #}
+<p><a href="{{ root_url }}">Zur obersten Ebene</a></p>
+{% endif %}
+
+<form method="post" action="{{ action }}">
+  <input type="hidden" name="pfad" value="{{ pfad }}">
+  <input type="hidden" name="art" value="{{ art }}">
+  <input type="hidden" name="ziel" value="{{ ziel }}">
+  {% if blocker %}<p class="muted" id="verschieben-hinweis">{{ blocker }}</p>{% endif %}
+  <div class="actions">
+    <a class="btn" href="{{ back_url }}">Abbrechen</a>
+    {% if listed and not blocker %}
+    <button type="submit" class="btn btn--primary">Nach „{{ ziel_name }}“ verschieben</button>
+    {% endif %}
+  </div>
+</form>
